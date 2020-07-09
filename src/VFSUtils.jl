@@ -1,6 +1,5 @@
-# This takes the .zts output from PRZM5 to parameterize the input files of VFSMOD
-#for each individual precipitation event, and compiles the results into
-#another .zts file upon which VVWM can be run
+### This file contains all of the structs and the functions that manipulate them
+# that are needed to run VFSMod from PRZM outputs, and VVWM from VFSMOD outputs
 
 using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots #Gtk removed
 
@@ -149,7 +148,7 @@ end
 #Write all the file names
 function writeFileNames(workingPath, exePath, turfPath, projectName, pwcName, twoCharacterCode)
     if length(projectName) > 6
-        error("Project name must be 6 characters")
+        error("Project name must be <= 6 characters")
     end
     executeString = string(projectName,twoCharacterCode,".prj")
     exePath = exePath[1:end-1] #To make the path 'command friedly'
@@ -535,7 +534,7 @@ function readChemicalParameters(fn)#, chemStruct::chemicalParameters)
     return chemStruct
 end
 
-function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, chem::chemicalParameters, scen::scenarioParameters, day, owqfn, fn)
+function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem::chemicalParameters, scen::scenarioParameters, airTempIn, day, owqfn, fn)
     #Only need one datum from this file, but it's position changes depending on the number of days of degradation after the event - that is also in the file
     # oldInBetweenDays = parse(Int64,split(readlines(owqfn)[13])[6])
 
@@ -899,13 +898,15 @@ function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters)
     return [oldCSV[1:end-1],newCSV[1:end-1],oldTXT[1:end-1],newTXT[1:end-1]]
 end
 
-function runVVWM(fileNames::inOutFileNames)
-    cp(fileNames.vvwm, string(workingPath, "vvwmTemp.exe"), force = true)
-    workingPathTrim = string(workingPath)[1:end-1]
-    vvwmExe = `$workingPathTrim\\vvwmTemp.exe`
-    run(vvwmExe)
-    rm(string(workingPath, "vvwmTemp.exe"))
-end
+## This function is no longer called
+## It was from debugging, when a local copy was required
+# function runVVWM(fileNames::inOutFileNames)
+#     cp(fileNames.vvwm, string(workingPath, "vvwmTemp.exe"), force = true)
+#     workingPathTrim = string(workingPath)[1:end-1]
+#     vvwmExe = `$workingPathTrim\\vvwmTemp.exe`
+#     run(vvwmExe)
+#     rm(string(workingPath, "vvwmTemp.exe"))
+# end
 
 function getVVWMText(cn::columnNames, fn)
     vvwmTxt = open(fn, "r")
@@ -946,162 +947,173 @@ function getVVWMText(cn::columnNames, fn)
     #return DataFrame(load(File(format"CSV", tempName), spacedelim = true, header_exists = false, colnames = cn.vvwmTxtColumns))
 end
 
+@with_kw struct userInputs @deftype String
+    projectName = ""
+    stripWidthInM::Float64 = 0.0
+    twoCharacterCode = ""
+    workingPath = ""
+    pwcName = ""
+    useHPF::Bool = false
+    stormLengthInHours::Int64 = 8
+    exePath = ""
+    turfPath = ""
+end
+
 #Can save some work by following a rigid filename convention
-projectName = "SOILS" #Six characters only
-stripWidthInM = 10.0
-#Can replace the last two letters of the input files for the temporary working files so they do not get written over
-twoCharacterCode = "RG"
-workingPath = "Z:\\SharedwithVM\\VFS\\Soils\\9005\\"
-pwcName = "Persistane-REG"
-# If there's a proper hourly precipitation file, use that, otherwise generate the precipitation event programmatically from the daily value
-useHPF = false
-stormLengthInHours = 8 #only read when useHPF is false
+# projectName = "SOILS" #Six characters only
+# stripWidthInM = 10.0
+# #Can replace the last two letters of the input files for the temporary working files so they do not get written over
+# twoCharacterCode = "RG"
+# workingPath = "Z:\\SharedwithVM\\VFS\\Soils\\9005\\"
+# pwcName = "Persistane-REG"
+# # If there's a proper hourly precipitation file, use that, otherwise generate the precipitation event programmatically from the daily value
+# useHPF = false
+# stormLengthInHours = 8 #only read when useHPF is false
+#
+# #Less often changed are the paths to unchanging files
+# exePath = "Z:\\SharedwithVM\\VFS\\executables\\"
+# turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\"
 
-#Less often changed are the paths to unchanging files
-exePath = "Z:\\SharedwithVM\\VFS\\executables\\"
-turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\"
+function vfsMain(usInp::userInputs)
+    # Julia, or Juno, needs to have the working directory set
+    # It also requires a drive change separate from the rest of the path
+    #cd("Z:")
+    cd(usInp.workingPath[1:2])
+    cd(string(usInp.workingPath[3:end]))
 
-# Julia, or Juno, needs to have the working directory set
-# It also requires a drive change separate from the rest of the path
-cd("Z:")
-cd(string(workingPath[3:end]))
+    # All of the rest of the input and output file names can be generated programmatically
+    inOutNames = writeFileNames(usInp.workingPath, usInp.exePath, usInp.turfPath, usInp.projectName, usInp.pwcName, usInp.twoCharacterCode)
 
-# All of the rest of the input and output file names can be generated programmatically
-inOutNames = writeFileNames(workingPath, exePath, turfPath, projectName, pwcName, twoCharacterCode)
+    # Faster to write a dummy owq file than to test if it's the first run through the main loop every time
+    writeDummyOWQFile(inOutNames.owqFileName)
 
-# Faster to write a dummy owq file than to test if it's the first run through the main loop every time
-writeDummyOWQFile(inOutNames.owqFileName)
-
-#Need a place to put the new .zts info
-przmOut = open(inOutNames.przmOutName, "w")
-#It contains the same header information. These lines are not conducive to a DataFrame, so just copy them as-is
-for i in 1:3
-    write(przmOut, readlines(inOutNames.przmInName)[i], "\n")
-end
-
-#First, need the input data
-#Dataframes are easier with named columns
-cn = columnNames()
-#CSV.jl doesn't handle space delimited files well, so using CSVFiles
-przmIn = DataFrame(load(File(format"CSV", inOutNames.przmInName), spacedelim = true, skiplines_begin = 3, header_exists = false, colnames = cn.ztsColumns))
-thetaIn = DataFrame(load(File(format"CSV", inOutNames.thetaInName), spacedelim = true, skiplines_begin = 3, header_exists = false))[!,9]
-#The Hourly Precipitation File (HPF), if being used
-if useHPF
-    precipIn = DataFrame(load(File(format"CSV", inOutNames.hpfInName), spacedelim = true, header_exists = false, colnames = cn.hpfColumns))
-else
-    # Only need the daily precipitation, but want it in a dataframe with a header
-    # leading to this slightly awkward work-around
-    precipIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false, colnames = cn.dvfColumns))
-    precipIn = precipIn[!, [:Total]]
-    stormLength = stormLengthInHours*constants().secondsInAnHour
-end
-
-airTempIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false))[!,4]
-#Need the scenario information to be avaialable to several methods
-scenario = readScenarioParameters(inOutNames.scnFileName)
-chem = readChemicalParameters(inOutNames.swiFileName)
-
-# Properties of the filter strip do not change during the run
-filterStrip = writeFilterStrip(stripWidthInM, scenario, projectName, inOutNames.ikwOutName)
-# The properties of the grass never change
-writeGrass(inOutNames.igrOutName)
-
-#An index for keeping track of days bewtween simulations, to account for degradation
-inBetweenDays = 0
-
-### Turns out that THETO is the soil moisture at the BEGINNING of the simuation
-#Want the soil moisture from BEFORE the rain - but in the rare instance that it rains on the first day of the simulation, the first value must suffice. This variable is set to one at the bottom of the main for loop
-#turfOffset = 0
-
-# In order to keep the load in the VFS current, VFSMOD is run for every rain event in the HPF file
-    #No longer True # Most of the time, there isn't runoff.
-    #No longer True # Only when there is runoff does the VFS do anything
-    # But precipitation PROBABLY causes infiltration of the pesticide...
-for day in 1:size(precipIn, 1)
-
-    # Although VVWM probably doesn't read the dates - PRZM calls them 'dummy fields'
-    # It's nice to keep the data and the format "just in case"
-    yr = string(Int8(przmIn.Yr[day]))
-    mo = Int8(przmIn.Mo[day])
-    if mo < 10
-        mo = string(" ", string(mo))
-    else
-        mo = string(mo)
-
-    end
-    dy = Int8(przmIn.Dy[day])
-    if dy < 10
-        dy = string(" ", string(dy))
-    else
-        dy = string(dy)
+    #Need a place to put the new .zts info
+    przmOut = open(inOutNames.przmOutName, "w")
+    #It contains the same header information. These lines are not conducive to a DataFrame, so just copy them as-is
+    for i in 1:3
+        write(przmOut, readlines(inOutNames.przmInName)[i], "\n")
     end
 
-    # If it rains, do all the stuff to run VFSMOD;
-    #if it doesn't, just copy the line from the old .zts file
-#    if precipIn.Total[day] > 0 #Here we go!
-    if przmIn.RUNF0[day] > 0
-        #Need to know the number of days until the NEXT rain event to be simulated
-        #This used by VFSMOD to calculate degradation in the strip between rain events
-        global inBetweenDays = 0
-        # Need to prevent an end-of-read error if it rains on the last day
-        if length(przmIn.RUNF0) - day > 0
-            while przmIn.RUNF0[day+1+inBetweenDays] == 0
-                # Need to prevent an end-of=read error after the last rain event
-                global inBetweenDays += 1
-                if inBetweenDays+1 > length(przmIn.RUNF0)-day
-                    break
+    #First, need the input data
+    #Dataframes are easier with named columns
+    cn = columnNames()
+    #CSV.jl doesn't handle space delimited files well, so using CSVFiles
+    przmIn = DataFrame(load(File(format"CSV", inOutNames.przmInName), spacedelim = true, skiplines_begin = 3, header_exists = false, colnames = cn.ztsColumns))
+    thetaIn = DataFrame(load(File(format"CSV", inOutNames.thetaInName), spacedelim = true, skiplines_begin = 3, header_exists = false))[!,9]
+    #The Hourly Precipitation File (HPF), if being used
+    if usInp.useHPF
+        precipIn = DataFrame(load(File(format"CSV", inOutNames.hpfInName), spacedelim = true, header_exists = false, colnames = cn.hpfColumns))
+    else
+        # Only need the daily precipitation, but want it in a dataframe with a header
+        # leading to this slightly awkward work-around
+        precipIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false, colnames = cn.dvfColumns))
+        precipIn = precipIn[!, [:Total]]
+        stormLength = usInp.stormLengthInHours*constants().secondsInAnHour
+    end
+
+    airTempIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false))[!,4]
+    #Need the scenario information to be avaialable to several methods
+    scenario = readScenarioParameters(inOutNames.scnFileName)
+    chem = readChemicalParameters(inOutNames.swiFileName)
+
+    # Properties of the filter strip do not change during the run
+    filterStrip = writeFilterStrip(usInp.stripWidthInM, scenario, usInp.projectName, inOutNames.ikwOutName)
+    # The properties of the grass never change
+    writeGrass(inOutNames.igrOutName)
+
+    #An index for keeping track of days bewtween simulations, to account for degradation
+    inBetweenDays = 0
+
+    ### Turns out that THETO is the soil moisture at the BEGINNING of the simuation
+    #Want the soil moisture from BEFORE the rain - but in the rare instance that it rains on the first day of the simulation, the first value must suffice. This variable is set to one at the bottom of the main for loop
+    #turfOffset = 0
+
+    # In order to keep the load in the VFS current, VFSMOD is run for every rain event in the HPF file
+        #No longer True # Most of the time, there isn't runoff.
+        #No longer True # Only when there is runoff does the VFS do anything
+        # But precipitation PROBABLY causes infiltration of the pesticide...
+    for day in 1:size(precipIn, 1)
+
+        # Although VVWM probably doesn't read the dates - PRZM calls them 'dummy fields'
+        # It's nice to keep the data and the format "just in case"
+        yr = string(Int8(przmIn.Yr[day]))
+        mo = Int8(przmIn.Mo[day])
+        if mo < 10
+            mo = string(" ", string(mo))
+        else
+            mo = string(mo)
+
+        end
+        dy = Int8(przmIn.Dy[day])
+        if dy < 10
+            dy = string(" ", string(dy))
+        else
+            dy = string(dy)
+        end
+
+        # If it rains, do all the stuff to run VFSMOD;
+        #if it doesn't, just copy the line from the old .zts file
+    #    if precipIn.Total[day] > 0 #Here we go!
+        if przmIn.RUNF0[day] > 0
+            #Need to know the number of days until the NEXT rain event to be simulated
+            #This used by VFSMOD to calculate degradation in the strip between rain events
+            inBetweenDays = 0
+            # Need to prevent an end-of-read error if it rains on the last day
+            if length(przmIn.RUNF0) - day > 0
+                while przmIn.RUNF0[day+1+inBetweenDays] == 0
+                    # Need to prevent an end-of=read error after the last rain event
+                    inBetweenDays += 1
+                    if inBetweenDays+1 > length(przmIn.RUNF0)-day
+                        break
+                    end
                 end
             end
+
+            #Start with the rain - write a new irn file
+            #The runoff calculation needs the total event time, either returned from the rain function, if using hourly weather,
+            #Or set by the user if using daily weather information
+            if usInp.useHPF
+                eventTime = writePrecipitation(precipIn[day,:][5:end], inOutNames.irnOutName)
+            else
+                eventTime = stormLength
+                writePrecipitation(precipIn.Total[day], stormLength, inOutNames.irnOutName)
+            end
+            #Next, the runoff from the field
+            writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames.iroOutName)
+
+            #write the soil file
+            writeSoil(thetaIn[(day)], scenario, inOutNames.isoOutName)#Want the
+
+            #And the sediment file
+            writeSediment(przmIn.RUNF0[day], przmIn.ESLS0[day], scenario, inOutNames.isdOutName)
+
+            #And finally, the water quality
+            writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, airTempIn, day, inOutNames.owqFileName, inOutNames.iwqOutName)
+            #Write a line to the new zts file
+            #write(przmOut, "Hey...you should have run VFSMOD!", "\n")
+            run(inOutNames.vfsmod)
+            println(string("Simulation: ",day))
+            vfsOut = readWaterQuality(scenario, filterStrip, inOutNames.owqFileName, inOutNames.osmFileName)
+            write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
+
+        else #There was no rain, so no change in the VFS
+            write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(przmIn.RUNF0[day]), "   ", likePrzm(przmIn.ESLS0[day]), "   ", likePrzm(przmIn.RFLX1[day]), "   ", likePrzm(przmIn.EFLX1[day]), "   ", likePrzm(przmIn.DCON1[day]), "   ", likePrzm(przmIn.INFL0[day])), "\n")
+            #write(przmOut, join(@sprintf("%.4E3",permutedims(Vector(przmIn[day,:])))," "), "\n")
+
+            #A day with no precip is a day for degradation
+            inBetweenDays += 1
         end
-
-        #Start with the rain - write a new irn file
-        #The runoff calculation needs the total event time, either returned from the rain function, if using hourly weather,
-        #Or set by the user if using daily weather information
-        if useHPF
-            eventTime = writePrecipitation(precipIn[day,:][5:end], inOutNames.irnOutName)
-        else
-            eventTime = stormLength
-            writePrecipitation(precipIn.Total[day], stormLength, inOutNames.irnOutName)
-        end
-        #Next, the runoff from the field
-        writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames.iroOutName)
-
-        #write the soil file
-        writeSoil(thetaIn[(day)], scenario, inOutNames.isoOutName)#Want the
-
-        #And the sediment file
-        writeSediment(przmIn.RUNF0[day], przmIn.ESLS0[day], scenario, inOutNames.isdOutName)
-
-        #And finally, the water quality
-        writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], chem, scenario, day, inOutNames.owqFileName, inOutNames.iwqOutName)
-        #Write a line to the new zts file
-        #write(przmOut, "Hey...you should have run VFSMOD!", "\n")
-        run(inOutNames.vfsmod)
-        println(string("Simulation: ",day))
-        vfsOut = readWaterQuality(scenario, filterStrip, inOutNames.owqFileName, inOutNames.osmFileName)
-        write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
-
-    else #There was no rain, so no change in the VFS
-        write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(przmIn.RUNF0[day]), "   ", likePrzm(przmIn.ESLS0[day]), "   ", likePrzm(przmIn.RFLX1[day]), "   ", likePrzm(przmIn.EFLX1[day]), "   ", likePrzm(przmIn.DCON1[day]), "   ", likePrzm(przmIn.INFL0[day])), "\n")
-        #write(przmOut, join(@sprintf("%.4E3",permutedims(Vector(przmIn[day,:])))," "), "\n")
-
-        #A day with no precip is a day for degradation
-        global inBetweenDays += 1
+        ### Turns out that THETO is the soil moisture at the BEGINNING of the simuation
+        # Again, this is only used to prevent a read-error, by trying to get the
+        # soil moisture in the turf on the day before the przm simulation starts
+        #global turfOffset = 1
     end
-    ### Turns out that THETO is the soil moisture at the BEGINNING of the simuation
-    # Again, this is only used to prevent a read-error, by trying to get the
-    # soil moisture in the turf on the day before the przm simulation starts
-    #global turfOffset = 1
+    close(przmOut)
+
+    # Writes the new VVWM Transfer File, and returns file names for plotting
+    oldCSV,newCSV,oldTXT,newTXT = writeVVWMTransfer(inOutNames, filterStrip)
+    #writeVVWMTransfer(inOutNames, filterStrip,14)
+    #run(inOutNames.vvwm)
+    return inOutNames.vvwm, oldTXT, newTXT
 end
-close(przmOut)
-
-oldCSV,newCSV,oldTXT,newTXT = writeVVWMTransfer(inOutNames, filterStrip)
-#writeVVWMTransfer(inOutNames, filterStrip,14)
-run(inOutNames.vvwm)
-
-noVFS = getVVWMText(cn,oldTXT)
-yesVFS = getVVWMText(cn,newTXT)
-#noVFS = DataFrame(CSV.read(oldTXT, delim = " ", datarow = 20, limit = 50, header = cn.vvwmTxtColumns))
-
-plot(noVFS.Run, [noVFS.Peak,yesVFS.Peak], title = "Efficacy of VFS for EEC Reduction", label = ["Without VFS" "With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
-plot(noVFS.Run, [noVFS.OneYear,yesVFS.OneYear], title = "Efficacy of VFS for EEC Reduction", label = ["Without VFS" "With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
+# These last bits allow quick plotting of results
