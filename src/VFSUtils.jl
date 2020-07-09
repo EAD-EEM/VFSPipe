@@ -47,7 +47,7 @@ end
     CI::R = 0.0 #This is the only value value changes from run to run
     SG::R = 2.65 #This is the density of quartz
 end
-
+# A blend of PWC and VFSMOD values
 @with_kw struct scenarioParameters{R <:Real}
     #For a few calculations
     fieldAreaInHa::R = 10.0 #in ha
