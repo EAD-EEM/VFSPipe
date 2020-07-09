@@ -20,27 +20,27 @@ using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots #Gtk re
     kgInATonne = 1000
     cmSqInAMSq = 10000
 end
-
+# matches VFSMOD
 @with_kw struct soilParameters{R <:Real}
     #Using the variable names from VFSMOD
     θI::R = 0.0 #This is the only value that changes from run to run
     SM::R = 0.0 # Maximum surface storage
     SCHK::R = 0.5 # relative distance from upper edge..?
 end
-
+#matches VFSMOD
 @with_kw struct chemicalParameters{R <:Real}
     IKD::Int8 = 1 #1=KOC used
     KOCD::R = 100.0 #
     DGGHALF::R = 30.0 #Half=life, not K
 end
-#These are the parameters required by the water quality file, and are not sourced from other structs
+#These are the parameters required by the water quality file, and are NOT sourced from other structs
 # Other structs required for the output include chemical and scenario parameters
 @with_kw struct waterQualityParameters{R <:Real}
     IQPRO::Int8 = 1 #1 = Based on Sabbagh
     IDG::Int8 = 2 #2=degradation by decay rate only
     dgML::R = 2.0 #Surface mixing layer thickness = constant
 end
-
+#matches VFSMOD
 @with_kw struct sedimentParameters{R <:Real}
     #Using the variable names from VFSMOD
     NPART::Int8 = 7 # 7 = read user input values
