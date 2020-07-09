@@ -9,6 +9,7 @@ Executing the code runs VFSMOD for every precipitation event, creates new .zts a
 
 ## Required External Files
 The path to a folder containing the executables for VFSMOD and VVWM is required. (WOMM)
+The list of soil texture classes is also required. It is not a large file and perhaps should be moved into the project.
 
 The path to a folder containing .zts files with the initial soil moisture conditions for the VFS for every scenario is required. (WOMM)
 
