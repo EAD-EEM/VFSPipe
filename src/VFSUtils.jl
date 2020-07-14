@@ -1,7 +1,7 @@
 ### This file contains all of the structs and the functions that manipulate them
 # that are needed to run VFSMod from PRZM outputs, and VVWM from VFSMOD outputs
 
-using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots #Gtk removed
+using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots, StaticArrays #Gtk removed
 
 #constants
 @with_kw struct constants @deftype Int64
@@ -86,20 +86,20 @@ end
 end
 # matches VFSMOD parameter names
 @with_kw struct filterParameters @deftype Float64
-    FWIDTH = 363.821 # Width of strinp in m
+    FWIDTH = 363.821 # Width of strip in m
     VL = 3.0 # Length of strip in m
     N::Int64 = 11  # Number of nodes
     θw = 0.5 # Time weighted factor, Crank-Nicholson solution
     CR = 0.8 # Courant number
     MAXITER::Int64 = 350 # Maximum number of interations
     NPOL::Int64 = 3 # Number of nodal points
-    IELOUT::Int8 = 1 #Flag for output
-    KPG::Int8 = 1 # Flag for Petrox-Galerkin solution
-    NPROP::Int8 = 1 #Number of segments
+    IELOUT::Int64 = 1 #Flag for output
+    KPG::Int64 = 1 # Flag for Petrox-Galerkin solution
+    NPROP::Int64 = 1 #Number of segments
     SX = 3.0 #Distance of filter of uniform surface properties - default is same as VL
     RNA = 0.45 #Manning's n for segment
     SOA = 0.0200 # Slope not read here - write method takes from scenarioParameters
-    IWQ::Int8 = 1 #Flag for water quality calculation, 1 = do it
+    IWQ::Int64 = 1 #Flag for water quality calculation, 1 = do it
     areaInMSq = 1091.5 # Area in m^2
     areaInHa = 0.1091 # Area in Ha
 end
@@ -111,6 +111,20 @@ end
     H = 18
     VN2 = 0.05
     ICO::Int8 = 0
+end
+
+@with_kw struct rainInput
+    nrain::Int64 = 0
+    rpeak::Float64 = 0.0
+    rain::SArray{Tuple{200,2},Float64}
+end
+
+@with_kw struct runoffInput @deftype Float64
+    swidth = 0.0
+    slength = 0.0
+    nbcroff::Int64 = 0
+    bcropeak = 0.0
+    bcroff::SArray{Tuple{200,2},Float64}
 end
 
 # A container for all of the filenames and some paths required to make this crazy thing go
@@ -147,8 +161,7 @@ end
     vvwmTxtColumns = ["Run", "Peak", "FourDay","TwentyOneDay","SixtyDay","NinetyDay","OneYear","PWPeak","PWTwentyOneDay"]
     vvwmCsvColumns = ["Depth","Average","PWAverage","Peak"]
 end
-#
- A container for all the things that the user can change easily
+# A container for all the things that the user can change easily
 @with_kw struct userInputs @deftype String
     projectName = ""
     stripWidthInM::Float64 = 0.0
@@ -279,6 +292,11 @@ function writePrecipitation(row::DataFrame,fn)
         rates = [rates;0]
     end
 
+    # create the struct before altering the vectors for text output
+    rain = zeros(Float64, 200, 2)
+    rain[1:length(times),1:2] = hcat([times],[rates])
+    storm = rainInput(nrain = numberOfDataInAFakeStorm, rpeak = secondlyRate, rain = rain)
+
     #VFSMOD expects a description of the data at the top of the data
     pushfirst!(times, length(times))
     pushfirst!(rates, maximum(rates))
@@ -288,7 +306,7 @@ function writePrecipitation(row::DataFrame,fn)
         #write(irn, string(" ", @sprintf("%08u",times[j]), "  ", @sprintf("%.4E",rates[j])), "\n")
     end
     close(irn)
-    return stormTime
+    return stormTime, storm
 end
 # This version takes a daily rain amount and generates an stormTime seconds long storm from it
 function writePrecipitation(precip::Float64, stormTime::Int64, fn)
@@ -312,6 +330,11 @@ function writePrecipitation(precip::Float64, stormTime::Int64, fn)
     write(irn, string(@sprintf("%9s",oneSecondAfterStorm), "  ", @sprintf("%.4E",0.0)), "\n")
     write(irn, string(@sprintf("%9s",endOfSimulationTime), "  ", @sprintf("%.4E",0.0)), "\n")
     close(irn)
+    #rain = Array{Float64,2}(undef,200,2)
+    rain = zeros(Float64, 200, 2)
+    rain[1:numberOfDataInAFakeStorm,1:2] = hcat([startOfStorm,stormTime,oneSecondAfterStorm,endOfSimulationTime],[secondlyRate,secondlyRate,0.0,0.0])
+    storm = rainInput(nrain = numberOfDataInAFakeStorm, rpeak = secondlyRate, rain = rain)
+    return storm
 end
 
 # this takes the scenarioParameters struct and writes out the .iso file for VFSMOD
@@ -817,6 +840,7 @@ function getVVWMText(cn::columnNames, fn)
     df = DataFrame(load(File(format"CSV", tempName), spacedelim = true, header_exists = false, colnames = cn.vvwmTxtColumns))
     rm(tempName)
     return df
+end
 
 # The bit that does everything
 function vfsMain(usInp::userInputs)
@@ -911,13 +935,13 @@ function vfsMain(usInp::userInputs)
             #The runoff calculation needs the total event time, either returned from the rain function, if using hourly weather,
             #Or set by the user if using daily weather information
             if usInp.useHPF
-                eventTime = writePrecipitation(precipIn[day,:][5:end], inOutNames.irnOutName)
+                eventTime, irn = writePrecipitation(precipIn[day,:][5:end], inOutNames.irnOutName)
             else
                 eventTime = stormLength
-                writePrecipitation(precipIn.Total[day], stormLength, inOutNames.irnOutName)
+                irn = writePrecipitation(precipIn.Total[day], stormLength, inOutNames.irnOutName)
             end
             #Next, the runoff from the field
-            writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames.iroOutName)
+            irn = writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames.iroOutName)
 
             #write the soil file
             writeSoil(thetaIn[(day)], scenario, inOutNames.isoOutName)#Want the
