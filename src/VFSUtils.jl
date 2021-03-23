@@ -39,7 +39,7 @@ end
 #These are the parameters required by the water quality file, and are NOT sourced from other structs
 # Other structs required for the output include chemical and scenario parameters
 @with_kw struct waterQualityParameters{R <:Real}
-    IQPRO::Int8 = 1 #1 = Based on Sabbagh
+    IQPRO::Int8 = 1 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     IDG::Int8 = 2 #2=degradation by decay rate only
     dgML::R = 2.0 #Surface mixing layer thickness = constant
 end
@@ -163,9 +163,7 @@ end
 end
 # A container for all the things that the user can change easily
 @with_kw struct userInputs @deftype String
-    projectName = ""
     stripWidthInM::Float64 = 0.0
-    twoCharacterCode = ""
     workingPath = ""
     pwcName = ""
     useHPF::Bool = false
@@ -175,6 +173,10 @@ end
     pesticideEquation::Int64 = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     Ksat::Float64 = 0.0
     shapeFlag::Int64 = 1
+    isFirstRun::Bool = true
+    isLastRun::Bool = false
+    scenarioName = ""
+    scenarioPath = ""
 end
 
 #The .zts file uses an inconvenient format for the numbers, required for the correct spacing
@@ -187,17 +189,30 @@ end
 
 #This function generates all of the filenames used by VVWM and VFSMOD
 # It takes most of the user input...
-#It writes the project (.prj) file requred by VFSMOD
+#It writes the project (.prj) file required by VFSMOD
+# IFF this is the first run of a batch, it makes a copy of the vvwmtransfer.txt file, to avoid mistakes while running several instances in the same folder
 #It returns an inOutNames struct
-#function writeFileNames(workingPath, exePath, turfPath, projectName, pwcName, twoCharacterCode)
+
 function writeFileNames(ui::userInputs)
-    if length(ui.projectName) > 6
-        error("Project name must be <= 6 characters")
+    # if length(ui.projectName) > 6
+    #     error("Project name must be <= 6 characters")
+    # end
+    projectName = "VFSM"
+    runNumber = 0
+    while isfile(string(ui.workingPath,projectName,runNumber,".igr"))
+        runNumber += 1
     end
-    executeString = string(ui.projectName,ui.twoCharacterCode,".prj")
+
+    executeString = string(projectName,runNumber,".prj")
     exePath = ui.exePath[1:end-1] #To make the path 'command friedly'
     vfsmod = `$exePath\\vfsm.exe $executeString`
-    vvwmTransferFileName = string(ui.workingPath, "vvwmTransfer.txt")
+
+    vvwmTransferFileName = string(ui.workingPath, ui.pwcName, "_", ui.scenarioName, "_vvwmTransfer.txt")
+        # IF this is the first run after a PRZM run, make a safe copy - allows direct comparison of what enters the pond
+    if ui.isFirstRun
+        cp(string(ui.workingPath, "vvwmTransfer.txt"), string(vvwmTransferFileName[1:end-4], "_sansVFS.txt"), force = true)
+        rm(string(ui.workingPath, "vvwmTransfer.txt"))
+    end
     vvwm = `$exePath\\vvwm.exe $vvwmTransferFileName`
     swiFileName = string(ui.workingPath, ui.pwcName, ".SWI")
     if isfile(swiFileName)
@@ -205,24 +220,36 @@ function writeFileNames(ui::userInputs)
     else
         swiFileName = string(ui.workingPath, ui.pwcName, ".PWC")
     end
-    przmInName = string(ui.workingPath, ui.projectName, "MN.zts")
+    przmInName = string(ui.workingPath, projectName, "_before.zts")
     #przmInName = string(workingPath, projectName, "NM.zts")
     cp(string(ui.workingPath,ui.pwcName,".zts"), przmInName, force = true)
-    przmOutName = string(ui.workingPath,ui.projectName, ".zts")
+    przmOutName = string(ui.workingPath,projectName, ".zts")
     #For now, since we don't really need an HPF - could create from dvf or met right here
     #In future, should explore real hourly with the 'new' met data
-    hpfInName = string(ui.workingPath, ui.projectName, ".HPF")
-    prjInName = string(ui.workingPath, ui.projectName, ".prj")
-    prjOutName = string(ui.workingPath, ui.projectName, ui.twoCharacterCode, ".prj")
+    hpfInName = string(ui.workingPath, projectName, ".HPF")
+    prjInName = string(ui.workingPath, projectName, ".prj")
+    prjOutName = string(ui.workingPath, projectName, runNumber, ".prj")
+    
     scnFileName = string(ui.workingPath, readlines(swiFileName)[49], ".SCN")
-    dailyWeatherFileName = string(ui.workingPath, split(readlines(swiFileName)[50], "\\")[end])
-    thetaInName = string(ui.turfPath,split(readlines(swiFileName)[50], "\\")[end][1:(end-4)], "Turf.zts")
+    if isfile(scnFileName)
+        # Do nothing
+    else
+        scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN")
+    end
+
+    dailyWeatherFileName = readlines(scnFileName)[2]
+    if isfile(dailyWeatherFileName)
+        # Do nothing
+    else
+        dailyWeatherFileName = string(ui.workingPath, split(readlines(scnFileName)[2], "\\")[end])
+    end
+    thetaInName = string(ui.turfPath,split(readlines(scnFileName)[2], "\\")[end][1:(end-4)], "Turf.zts")
 
     #Create a project file for VFSMOD to read the file names too
     fileTypes = ["ikw","iso","igr","isd","irn","iro","iwq","og1","og2","ohy","osm","osp","owq"]
     prj = open(prjOutName, "w")
     for i in 1:length(fileTypes)
-        write(prj, string(fileTypes[i],"=",ui.projectName,ui.twoCharacterCode,".",fileTypes[i]),"\n")
+        write(prj, string(fileTypes[i],"=",projectName,runNumber,".",fileTypes[i]),"\n")
     end
     close(prj)
 
@@ -387,53 +414,6 @@ function writeRunoff(RUNF0,scen::scenarioParameters,filter::filterParameters, ev
 end
 
 # this populates the scenarioParameters struct from the information in the PWC .SCN File
-function readScenarioParameters(fn)
-    scn = open(fn, "r")
-    #Throw away the first three lines
-    for i in 1:6
-        readline(scn)
-    end
-    fieldArea = 10.0
-    fldArea = readline(scn) #7
-    if fldArea != ""
-        fieldArea = parse(Float64, fldArea)/constants().mSqInAHa
-    end
-    pondArea = 10000.0
-    pndArea = readline(scn) #8
-    if pndArea != ""
-        pondArea = parse(Float64, pndArea)
-    end
-    for i in 9:13
-        readline(scn)
-    end
-    benthicPorosity = readfirst(scn) # 14
-    ρBenthicBulk = readfirst(scn) # 15
-    for i in 16:48
-        readline(scn)
-    end
-    slope = readfirst(scn)/constants().cent #49 - must be fractional, not percent
-    for i in 50:52
-        readline(scn)
-    end
-    ρ = readfirst(scn) #53 in g per cm^3 (or tonnes per m^3)
-    fieldCapacity = readfirst(scn) #54
-    wiltingPoint = readfirst(scn) #55
-    ocPercent = readfirst(scn) #56
-    readline(scn) #57
-    sandPercent = readfirst(scn) #58
-    clayPercent = readfirst(scn) #59
-    close(scn)
-    POR = 1-(ρ/constants().ρQuartz)
-    texture = getSoilClass(sandPercent,(100-sum([sandPercent,clayPercent])), clayPercent)
-    #This derivation probably highlights a logical flaw in determining the bulk density of sediments
-    #In PWC scenario development rather than providing a better value for sediment bulk density
-    #It shall be left here but not used in the writing of the sediment input file for now
-    ρSedimentParticle = (ρBenthicBulk - benthicPorosity*constants().ρWater)/(1 - benthicPorosity)
-    scenStruct = scenarioParameters(fieldAreaInHa = fieldArea, OCP = ocPercent, CCP = clayPercent, FC = fieldCapacity, COARSE = sandPercent/constants().cent, POR = POR, VKS = texture[1], SAV = texture[2], DP = texture[3], θSoil = POR, SOA = slope) #ρSed = ρSedimentParticle,
-    return scenStruct
-end
-
-# this populates the scenarioParameters struct from the information in the PWC .SCN File
 function readScenarioParameters(fn,VKS::Float64)
     scn = open(fn, "r")
     #Throw away the first three lines
@@ -476,11 +456,33 @@ function readScenarioParameters(fn,VKS::Float64)
     #In PWC scenario development rather than providing a better value for sediment bulk density
     #It shall be left here but not used in the writing of the sediment input file for now
     ρSedimentParticle = (ρBenthicBulk - benthicPorosity*constants().ρWater)/(1 - benthicPorosity)
-    #Just for testing out the sensitivity of Ksat (a.k.a VKS)
-        if VKS < 0.0
+    
+    #Alternate methods to determine Ksat (a.k.a VKS)
+    topsoil = 1 #This is a qualitative binary in the equation - set here to 1 so that all VFS soils are topsoils when using Wösten
+    if VKS < -9998.999 #it's not an integer, so just being cautious
         VKS = texture[1]
+    elseif -9999 < VKS < 0.0 # use the empirical equation from Wösten et al., 1999 (Geoderma 90 1999 169–185)
+        silt = (100-sum([sandPercent,clayPercent]))
+        om = ocPercent * 1.724 # Empirical adjustment from organic carbon percent to organic matter percent
+        Wösten = exp(7.755 
+        + 0.0352 * silt 
+        + 0.93 * topsoil 
+        - 0.967 * ρ^2 
+        - 0.000484 * clayPercent^2 
+        - 0.000322 * silt^2 
+        + 0.001/silt 
+        - 0.0748/om 
+        - 0.643 * log(silt) 
+        - 0.01398 * ρ * clayPercent 
+        - 0.1673 * ρ * om 
+        + 0.02986 * topsoil * clayPercent
+        - 0.03305 * topsoil * silt)
+        VKS = Wösten / constants().cmInAMeter / constants().hoursInADay / constants().secondsInAnHour
+    else
+        #Do Nothing: keep the user's input Ksat
     end
     scenStruct = scenarioParameters(fieldAreaInHa = fieldArea, OCP = ocPercent, CCP = clayPercent, FC = fieldCapacity, COARSE = sandPercent/constants().cent, POR = POR, VKS = VKS, SAV = texture[2], DP = texture[3], θSoil = POR, SOA = slope)
+
     return scenStruct
 end
 
@@ -634,7 +636,7 @@ function readChemicalParameters(fn)#, chemStruct::chemicalParameters)
 end
 
 # This takes all sorts of stuff in order to write the .iwq file for VFSMOD
-function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem::chemicalParameters, scen::scenarioParameters, ui::userInputs, airTempIn, day, owqfn, fn)
+function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem::chemicalParameters, scen::scenarioParameters, water::waterQualityParameters, airTempIn, day, owqfn, fn)
     #Only need one datum from this file, but it's position changes depending on the number of days of degradation after the event - that is also in the file
     # oldInBetweenDays = parse(Int64,split(readlines(owqfn)[13])[6])
 
@@ -673,7 +675,6 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
     airTemps = airTempIn[day:day+inBetweenDays]
     θs = thetaIn[day:day+inBetweenDays]
 
-    water = waterQualityParameters()
     iwq = open(fn,"w")
     write(iwq, string(" ", water.IQPRO),"\n")
     write(iwq, string(" ", chem.IKD, " ", chem.KOCD, " ", scen.OCP, ), "\n")
@@ -842,10 +843,8 @@ function writePRZMTurf(turfPath) #Do you need these?
 end
 
 # This writes a new VVWMTransfer file by copying lines from the old one and inserting those that have changed
-function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters)
-    # Make a safe copy - allows direct comparison of what enters the pond
-    cp(string(fileNames.vvwmTransferFileName), string(fileNames.vvwmTransferFileName[1:end-4], "sansVFS.txt"), force = true)
-    vvwmIn = open(string(fileNames.vvwmTransferFileName[1:end-4], "sansVFS.txt"), "r")
+function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters, usInp::userInputs)
+    vvwmIn = open(string(fileNames.vvwmTransferFileName[1:end-4], "_sansVFS.txt"), "r")
     vvwmOut = open(fileNames.vvwmTransferFileName, "w")
     readline(vvwmIn) #1
     write(vvwmOut, fileNames.przmOutName[1:end-4], "\n") #1
@@ -864,14 +863,14 @@ function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters)
     end
     seeEssVee = split(readline(vvwmIn), "\\")[end] #69, dude!
     oldCSV = string(workingPath, seeEssVee)
-    newCSV = string(workingPath, "VFS_", seeEssVee)
-    write(vvwmOut, string("\"", newCSV), "\n") #69. dude!
+    newCSV = string(workingPath, Int64(usInp.stripWidthInM), "m_VFS_", seeEssVee)
+    write(vvwmOut, string("\"", newCSV), "\n") #69, dude!
     for i = 70:71
         write(vvwmOut, string("\"",workingPath,"VFS_",split(readline(vvwmIn), "\\")[end]), "\n")
     end
     teeExTee = split(readline(vvwmIn), "\\")[end] #72
     oldTXT = string(workingPath, teeExTee)
-    newTXT = string(workingPath, "VFS_", teeExTee)
+    newTXT = string(workingPath, Int64(usInp.stripWidthInM), "m_VFS_", teeExTee)
     write(vvwmOut, string("\"", newTXT), "\n") #72
     for i = 73:83 #length(vvwm)
         write(vvwmOut, string("\"",workingPath,"VFS_",split(readline(vvwmIn), "\\")[end]), "\n")
@@ -923,6 +922,9 @@ function vfsMain(usInp::userInputs)
     # All of the rest of the input and output file names can be generated programmatically
     inOutNames = writeFileNames(usInp)
 
+    # The properties of the grass never change, but its existence is used for program control
+    writeGrass(inOutNames.igrOutName)
+
     # Faster to write a dummy owq file than to test if it's the first run through the main loop every time
     writeDummyOWQFile(inOutNames.owqFileName)
 
@@ -956,9 +958,10 @@ function vfsMain(usInp::userInputs)
     chem = readChemicalParameters(inOutNames.swiFileName)
 
     # Properties of the filter strip do not change during the run
-    filterStrip = writeFilterStrip(usInp.stripWidthInM, scenario, usInp.shapeFlag, usInp.projectName, inOutNames.ikwOutName)
-    # The properties of the grass never change
-    writeGrass(inOutNames.igrOutName)
+    filterStrip = writeFilterStrip(usInp.stripWidthInM, scenario, usInp.shapeFlag, "VFSM", inOutNames.ikwOutName)
+
+    # Some parameters of the water do not change, and are assigned their own struct
+    water = waterQualityParameters(IQPRO = usInp.pesticideEquation)
 
     #An index for keeping track of days bewtween simulations, to account for degradation
     inBetweenDays = 0
@@ -1020,7 +1023,7 @@ function vfsMain(usInp::userInputs)
             writeSediment(przmIn.RUNF0[day], przmIn.ESLS0[day], scenario, inOutNames.isdOutName)
 
             #And finally, the water quality
-            writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, usInp, airTempIn, day, inOutNames.owqFileName, inOutNames.iwqOutName)
+            writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, water, airTempIn, day, inOutNames.owqFileName, inOutNames.iwqOutName)
             #Write a line to the new zts file
             #write(przmOut, "Hey...you should have run VFSMOD!", "\n")
             run(inOutNames.vfsmod)
@@ -1038,8 +1041,11 @@ function vfsMain(usInp::userInputs)
     end
     close(przmOut)
 
+    if usInp.isLastRun
+        rm(inOutNames.igrOutName)
+    end
     # Writes the new VVWM Transfer File, and returns file names for plotting
-    oldCSV,newCSV,oldTXT,newTXT = writeVVWMTransfer(inOutNames, filterStrip)
+    oldCSV,newCSV,oldTXT,newTXT = writeVVWMTransfer(inOutNames, filterStrip, usInp)
     #run(inOutNames.vvwm)
     return inOutNames.vvwm, oldTXT, newTXT
 end
