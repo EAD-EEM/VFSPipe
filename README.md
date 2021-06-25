@@ -21,6 +21,7 @@ VFSMod requires the initial soil moisture of the VFS at the start of each precip
 
 Short Term
  - add slope(s) as an optional user input (currently slope is read from the PWC scenario).
+
 Long Term
  - inclusion of the ability to write/edit PRZM files and run PRZM directly. This will allow automated, systematic exploration of more variables than are currently possible
  - a move to dynamic link library from text files to greatly speed execution. This requires modification of VFSMOD itself.
