@@ -25,3 +25,4 @@ Short Term
 Long Term
  - inclusion of the ability to write/edit PRZM files and run PRZM directly. This will allow automated, systematic exploration of more variables than are currently possible
  - a move to dynamic link library from text files to greatly speed execution. This requires modification of VFSMOD itself.
+ - addition of a proper GUI
