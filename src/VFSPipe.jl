@@ -5,13 +5,13 @@ include("./VFSUtils.jl")
 #include("C:\\Users\\hcuser\\github\\PRZMTools.jl\\src\\PRZMTools.jl")
 
 #User choice
-stripWidthInM = [11.0, 5.0] #[50.0, 15.0, 10.0, 5.0, 3.0]
+stripWidthInM = [10.0]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
 # If an .SCN file using the filename specified in the PWC run is located here, it will supersede one in the folder specified by scenarioPath
-workingPath = "Z:\\SharedwithVM\\VFS\\Phase Two\\PipetestZ\\" # must end in a double back-slash or slash # Name of the .SWI or .PWC file
-pwcName = "Koc10000"
-# If there's a proper hourly precipitation file, use that, otherwise generate the precipitation event programmatically from the daily value
+workingPath = "Z:\\SharedwithVM\\VFS\\Debugging\\" # must end in a double back-slash or slash # Name of the .SWI or .PWC file
+pwcName = "ECO-ORN"
+# If there's a proper hourly precipitation file (UPF), use that, otherwise generate the precipitation event programmatically from the daily value
 useHPF = false
 stormLengthInHours = 8 #only read when useHPF is false
 
@@ -24,20 +24,21 @@ Ksat = -4999 #in m/s
     
 # The dimensions of the VFS are calculated from its width (which VFS calls its length) and the area of the pond into which it flows
 # It can be a round pond with a round VFS around it, a square pond with a square VFS around it, or a square pond with a rectangular VFS on one side
-shapeFlag = 1 # 1 for round, 2 for square, 3 for rectangular
-
+shapeFlag = 3 # 1 for round, 2 for square, 3 for rectangular with a length determined from the hydraulic length and area of the field, anything else for rectangular on one side of a square pond
 
 #Less often changed are the paths to unchanging files
-# Executables file must contain vfsm,exe and vvwm.exe, as well as SoilTriangle.csv
+# Executables folder must contain vfsm.exe and vvwm.exe, as well as SoilTriangle.csv
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\" # must end in a double back-slash or slash
 # The path to the standard scenarios
-# If a .SCN file by the name of that used for the PWC run is found in the workingPath, that is used, otherwise a version is required in scenPath
+# If a .SCN file by the name of that used for the PWC run is found in the workingPath, that is used, otherwise a version is required in scenarioPath
 scenarioPath = "Z:\\SharedwithVM\\Scenarios\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the pre-storm water content of the VFS, is found.
 turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\" # must end in a double back-slash or slash
 
 # Everything below this ought not to require user input
+
+#***********************************************************************************************************************************************************************
 # To allow multiple simulations in the same folder
 if isfile(string(workingPath, "vvwmTransfer.txt"))
     scenarioName = readlines(string(workingPath, "vvwmTransfer.txt"))[29]
