@@ -57,6 +57,7 @@ end
     #For a few calculations
     fieldAreaInHa::R = 10.0 #in ha
     pondAreaInM2::R = 10000.0 #in m^2
+    hydraulicLengthInM::R = 356.8 #in m
     #For water quality
     OCP::R = 3.2 #Organic Carbon %
     CCP::R = 19.0 #Clay %
@@ -223,7 +224,7 @@ function writeFileNames(ui::userInputs)
     przmInName = string(ui.workingPath, projectName, "_before.zts")
     #przmInName = string(workingPath, projectName, "NM.zts")
     cp(string(ui.workingPath,ui.pwcName,".zts"), przmInName, force = true)
-    przmOutName = string(ui.workingPath,projectName, ".zts")
+    przmOutName = string(ui.workingPath,ui.stripWidthInM,"m_",projectName, ".zts")
     #For now, since we don't really need an HPF - could create from dvf or met right here
     #In future, should explore real hourly with the 'new' met data
     hpfInName = string(ui.workingPath, projectName, ".HPF")
@@ -439,7 +440,8 @@ function readScenarioParameters(fn,VKS::Float64)
         readline(scn)
     end
     slope = readfirst(scn)/constants().cent #49 - must be fractional, not percent
-    for i in 50:52
+    hydraulicLength = readfirst(scn) #50 in m
+    for i in 51:52
         readline(scn)
     end
     ρ = readfirst(scn) #53 in g per cm^3 (or tonnes per m^3)
@@ -481,7 +483,7 @@ function readScenarioParameters(fn,VKS::Float64)
     else
         #Do Nothing: keep the user's input Ksat
     end
-    scenStruct = scenarioParameters(fieldAreaInHa = fieldArea, OCP = ocPercent, CCP = clayPercent, FC = fieldCapacity, COARSE = sandPercent/constants().cent, POR = POR, VKS = VKS, SAV = texture[2], DP = texture[3], θSoil = POR, SOA = slope)
+    scenStruct = scenarioParameters(fieldAreaInHa = fieldArea, pondAreaInM2 = pondArea, hydraulicLengthInM = hydraulicLength, OCP = ocPercent, CCP = clayPercent, FC = fieldCapacity, COARSE = sandPercent/constants().cent, POR = POR, VKS = VKS, SAV = texture[2], DP = texture[3], θSoil = POR, SOA = slope)
 
     return scenStruct
 end
@@ -580,7 +582,9 @@ function writeFilterStrip(width::Float64, scen::scenarioParameters, shapeFlag::I
         # Length calculated as the area over the width
         # Area is the difference between the square within the outder edge of the strip and the area of the pond
         length = ((sqrt(scen.pondAreaInM2) + 2 * width)^2 - scen.pondAreaInM2)/width
-    else # hopefully the user wants rectangular, but this becomes the default
+    elseif shapeFlag == 3 # a squarish field dictates the length of the interface between the pond and a rectangular VFS on one side
+        length = scen.fieldAreaInHa * constants().mSqInAHa / scen.hydraulicLengthInM
+    else # this gives a square pond with a field on only one side, but this becomes the default
         # 
         length = sqrt(scen.pondAreaInM2)
     end
@@ -986,12 +990,12 @@ function vfsMain(usInp::userInputs)
             dy = string(dy)
         end
 
-        # If it rains, do all the stuff to run VFSMOD;
+        # If there is runoff, do all the stuff to run VFSMOD;
         #if it doesn't, just copy the line from the old .zts file
     #    if precipIn.Total[day] > 0 #Here we go!
         if przmIn.RUNF0[day] > 0
-            #Need to know the number of days until the NEXT rain event to be simulated
-            #This used by VFSMOD to calculate degradation in the strip between rain events
+            #Need to know the number of days until the NEXT runoff vent to be simulated
+            #This used by VFSMOD to calculate degradation in the strip between runoff events
             inBetweenDays = 0
             # Need to prevent an end-of-read error if it rains on the last day
             if length(przmIn.RUNF0) - day > 0
