@@ -1,11 +1,10 @@
 ### This file contains all of the structs and the functions that manipulate them
-# that are needed to run VFSMod from PRZM outputs, and VVWM from VFSMOD outputs
+# that are needed to run VFSMOD from PRZM outputs, and VVWM from VFSMOD outputs
 
 using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots, StaticArrays #Gtk removed
 
 #constants
 @with_kw struct constants @deftype Int64
-    #Not sure what's up
     cmInAMeter = 100
     secondsInAnHour = 3600
     hoursInADay = 24
@@ -39,7 +38,7 @@ end
 #These are the parameters required by the water quality file, and are NOT sourced from other structs
 # Other structs required for the output include chemical and scenario parameters
 @with_kw struct waterQualityParameters{R <:Real}
-    IQPRO::Int8 = 1 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
+    IQPRO::Int8 = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     IDG::Int8 = 2 #2=degradation by decay rate only
     dgML::R = 2.0 #Surface mixing layer thickness = constant
 end
@@ -48,12 +47,14 @@ end
 @with_kw struct sedimentParameters{R <:Real}
     #Using the variable names from VFSMOD
     NPART::Int8 = 7 # 7 = read user input values
-    CI::R = 0.0 #This is the only value value changes from run to run
+    CI::R = 0.0 #This is the only value that changes from run to run
     SG::R = 2.65 #This is the density of quartz
 end
 
 # A blend of PWC and VFSMOD values
 @with_kw struct scenarioParameters{R <:Real}
+    # All of these 'defaults' are overwritten by values from the scenario (.SCN), or calculated from information in the scenario
+    
     #For a few calculations
     fieldAreaInHa::R = 10.0 #in ha
     pondAreaInM2::R = 10000.0 #in m^2
@@ -67,23 +68,23 @@ end
     POR::R = 0.472 # same as saturated water content
     DP::R = 0.0098 #This should be modified for each SCENARIO
     #For Soil
-    VKS::R = 6.06E-6 # Saturated hydraulic conductivity (should be calculated from scenario)
-    SAV::R = 0.1101 # Green-Ampts' suction at wet front (should be calculated from scenario)
-    #Note in appendix says 'equivent to POR value'
-    θSoil::R = 0.47 # Saturated soil-water content (should be taken from scenario, same as porosity for now)
+    VKS::R = 6.06E-6 # Saturated hydraulic conductivity
+    SAV::R = 0.1101 # Green-Ampts' suction at wet front
+    #Note in appendix to VFSMOD Manual says 'equivent to POR value'
+    θSoil::R = 0.47 # Saturated soil-water content (same as porosity for now)
     ρSed::R = 2.65 # Density of sediment particles
     # Slope needed for filterParameters
-    SOA::R = 0.0200 # (should be read)
+    SOA::R = 0.0200 # As a fraction
 end
 
 # matches PRZM parameter names
 @with_kw struct waterQualityOutput @deftype Float64
     RUNF0 = 0.0 #cm per ha per day - water per field area
-    ESLS0 = 0.0 #tonnes per ha per day - solids per field area
-    RFLX1 = 0.0 # g per ha per day - mass of pesticide by runoff
-    EFLX1 = 0.0 # g per ha per day - mass of pesticide by erosion
-    DCON1 = 0.0 # g per ha per day - mass of degradate 1 by runoff
-    INFL0 = 0.0 # g per ha per day - mass of degradate 1 by erosion
+    ESLS0 = 0.0 #tonnes per day - solids per field area
+    RFLX1 = 0.0 # g per sqcm per day - mass of pesticide by runoff
+    EFLX1 = 0.0 # g per sqcm per day - mass of pesticide by erosion
+    DCON1 = 0.0 # g per sqcm per day - mass of degradate 1 by runoff
+    INFL0 = 0.0 # g per sqcm per day - mass of degradate 1 by erosion
 end
 # matches VFSMOD parameter names
 @with_kw struct filterParameters @deftype Float64
@@ -174,6 +175,7 @@ end
     pesticideEquation::Int64 = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     Ksat::Float64 = 0.0
     shapeFlag::Int64 = 1
+    slope::Float64 = 0.0 # In percent
     isFirstRun::Bool = true
     isLastRun::Bool = false
     scenarioName = ""
@@ -415,7 +417,7 @@ function writeRunoff(RUNF0,scen::scenarioParameters,filter::filterParameters, ev
 end
 
 # this populates the scenarioParameters struct from the information in the PWC .SCN File
-function readScenarioParameters(fn,VKS::Float64)
+function readScenarioParameters(fn,VKS::Float64,slpPrct::Float64)
     scn = open(fn, "r")
     #Throw away the first three lines
     for i in 1:6
@@ -440,6 +442,9 @@ function readScenarioParameters(fn,VKS::Float64)
         readline(scn)
     end
     slope = readfirst(scn)/constants().cent #49 - must be fractional, not percent
+    if slpPrct >= 0 # The user has specified a slope (in percent) to override the scenario
+        slope = slpPrct/constants().cent # Must be a fraction, not a percent
+    end
     hydraulicLength = readfirst(scn) #50 in m
     for i in 51:52
         readline(scn)
@@ -885,6 +890,7 @@ function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters, 
 end
 
 # This opens the output of VVWM and returns a dataframe that is easy to plot
+# CURRENTLY NOT CALLED FROM VFSPipe
 function getVVWMText(cn::columnNames, fn)
     vvwmTxt = open(fn, "r")
 
@@ -958,7 +964,7 @@ function vfsMain(usInp::userInputs)
 
     airTempIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false))[!,4]
     #Need the scenario information to be avaialable to several methods
-    scenario = readScenarioParameters(inOutNames.scnFileName, usInp.Ksat)
+    scenario = readScenarioParameters(inOutNames.scnFileName, usInp.Ksat, usInp.slope)
     chem = readChemicalParameters(inOutNames.swiFileName)
 
     # Properties of the filter strip do not change during the run
