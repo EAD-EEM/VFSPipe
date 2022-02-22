@@ -9,21 +9,21 @@ stripWidthInM = [10.0]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
 # NOTE: If an .SCN file using the filename specified in the PWC run is located in workingPath, it will supersede any in the folder specified by scenarioPath
-workingPath = "Z:\\SharedwithVM\\VFS\\Abamectin\\Additional PWC Modelling\\" # must end in a double back-slash or slash
+workingPath = "Z:\\SharedwithVM\\VFS\\Phase Three\\Test Case\\" # must end in a double back-slash or slash
 # Name of the .SWI or .PWC file
-pwcName = "RASP2-PEI"
+pwcName = "TestCasePWC2.0-PEI"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
 # Executables folder must contain vfsm.exe and vvwm.exe, as well as SoilTriangle.csv
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\" # must end in a double back-slash or slash
-# The path to the standard scenarios
-# If a .SCN file by the name of that used for the PWC run is found in the workingPath, that is used, otherwise a version is required in scenarioPath
-scenarioPath = "Z:\\SharedwithVM\\Scenarios\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the pre-storm water content of the VFS, is found.
 turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\" # must end in a double back-slash or slash
 
+# The path to the standard scenarios is not required any longer - all scenario information is read from the .PWC or .SWI file
+# If a .SCN file by the name of that used for the PWC run is found in the workingPath, that is used, otherwise a version is required in scenarioPath
+# scenarioPath = "Z:\\SharedwithVM\\Scenarios\\" # must end in a double back-slash or slash
 
 
 # *******************************************************************************************************************************************************************
@@ -38,12 +38,14 @@ pesticideEquation = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen - RECOMMENDE
 # Set to any value -9999 or less to use the lookup table method (based on soil texture pulled from the PWC scenario)
 # Set to any 0 > value > -9999 to use the Wösten et al., 1999 formula (based on soil texture, bulk density, and organic matter from PWC scenario, and specific to topsoils)
 Ksat = -9999 #in m/s - RECOMMENDED CHOICE IS -9999
-    
-# The dimensions of the VFS are calculated from its width (which VFSMOD calls its length) and the area of the pond into which it flows
-# It can be a round pond with a round VFS around it, a square pond with a square VFS around it, or a rectangular pond with a rectangular VFS on one side
-shapeFlag = 1 # 1 for round, 2 for square, 3 for rectangular with a length determined from the hydraulic length and area of the field, anything else for rectangular on one side of a square pond
 
-# Slope - an array of any positive values in percent 
+# The dimensions of the VFS are calculated from its width (which VFSMOD calls its length) and the area of the pond into which it flows
+# The default is a square field based on the field area with a rectangular VFS on one edge
+# It can also be a round pond with a round VFS around it, a square pond with a square VFS around it,
+# ...a rectangular pond with a rectangular VFS on one side (based on Hydraulic Length from PWC), or a square pond based on the pond area with a rectangular VFS and field on one side
+shapeFlag = 1 # 1 for default, 2 for round, 3 for square, 4 for rectangular with a length determined from the hydraulic length and area of the field, anything else for rectangular on one side of a square pond
+
+# Slope - an array of any positive or zero values in percent 
 # Any negative value to read slope from PWC scenario
 slopesInPercent = [-9999]
 
@@ -54,9 +56,8 @@ slopesInPercent = [-9999]
 #***********************************************************************************************************************************************************************
 # A check for a 'fresh' vvwmTransfer file - if it exists, capture the scenario name to use as a unique name for the working files
 # Unique names allow multiple, consecutive simulations in the same folder
-if isfile(string(workingPath, "vvwmTransfer.txt"))
-    scenarioName = readlines(string(workingPath, "vvwmTransfer.txt"))[29]
-else
+if !isfile(string(workingPath, "vvwmTransfer.txt"))
+    #scenarioName = readlines(string(workingPath, "vvwmTransfer.txt"))[29]
     println("VFSPipe has already been run on these PWC results. Please re-run PWC and try again.")
     return
 end
@@ -65,7 +66,7 @@ firstRun = true
 for width in stripWidthInM
 
     for slope in slopesInPercent
-    
+
         lastrun = false
         if width == width[end]
             lastrun = true
@@ -73,7 +74,7 @@ for width in stripWidthInM
 
         # All of the user input variables collected here are passed to the other module in a single struct called a userInputs
         #usInp = userInputs(projectName = projectName, stripWidthInM = width, twoCharacterCode = twoCharacterCode, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, turfPath = turfPath, pesticideEquation = pesticideEquation, Ksat=Ksat, shapeFlag = shapeFlag, isFirstRun = firstRun, scenarioName = scenarioName, scenarioPath = scenarioPath)
-        usInp = userInputs(stripWidthInM = width, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, turfPath = turfPath, pesticideEquation = pesticideEquation, Ksat=Ksat, shapeFlag = shapeFlag, slope = slope, isFirstRun = firstRun, isLastRun = lastrun, scenarioName = scenarioName, scenarioPath = scenarioPath)
+        usInp = userInputs(stripWidthInM = width, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, turfPath = turfPath, pesticideEquation = pesticideEquation, Ksat = Ksat, shapeFlag = shapeFlag, slope = slope, isFirstRun = firstRun, isLastRun = lastrun)#, scenarioName = scenarioName, scenarioPath = scenarioPath)
 
         #This runs VFSMOD for all runoff events, rewrites the zts file and returns the string to run VVWM
         newVVWM, oldTXT, newTXT = vfsMain(usInp)

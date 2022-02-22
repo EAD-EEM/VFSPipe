@@ -1,6 +1,8 @@
 ### This file contains all of the structs and the functions that manipulate them
 # that are needed to run VFSMOD from PRZM outputs, and VVWM from VFSMOD outputs
 
+# Notes marked "2022 Guidance" refer to Ritter and Muñoz-Carpena, VFSMOD Input Parameter Guidance for Long-tern Regulatory Scenarios
+
 using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots, StaticArrays #Gtk removed
 
 #constants
@@ -32,7 +34,8 @@ end
 @with_kw struct chemicalParameters{R <:Real}
     IKD::Int8 = 1 #1=KOC used
     KOCD::R = 100.0 #
-    DGGHALF::R = 30.0 #Half=life, not K
+    DGGHALF::R = 30.0 #Halflife, not K
+    DGML::R = 0.05 #dispersion length of chemical, meters, default from 2022 guidance
 end
 
 #These are the parameters required by the water quality file, and are NOT sourced from other structs
@@ -41,6 +44,7 @@ end
     IQPRO::Int8 = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     IDG::Int8 = 2 #2=degradation by decay rate only
     dgML::R = 2.0 #Surface mixing layer thickness = constant
+    IMOB::R = 1.0 # Portion of the residue available for carryover the the next runoff event
 end
 
 # matches VFSMOD parameter names
@@ -143,6 +147,7 @@ end
     prjOutName = ""
     scnFileName = ""
     swiFileName = ""
+    isPWCFormat::Bool = false
     vvwmTransferFileName = ""
     dailyWeatherFileName = ""
     ikwOutName = ""
@@ -202,38 +207,53 @@ function writeFileNames(ui::userInputs)
     # end
     projectName = "VFSM"
     runNumber = 0
-    while isfile(string(ui.workingPath,projectName,runNumber,".igr"))
+    while isfile(string(ui.workingPath, projectName, runNumber, ".igr"))
         runNumber += 1
     end
 
-    executeString = string(projectName,runNumber,".prj")
+    executeString = string(projectName, runNumber, ".prj")
     exePath = ui.exePath[1:end-1] #To make the path 'command friedly'
-    vfsmod = `$exePath\\vfsm.exe $executeString`
+    vfsmod = `$exePath\\vfsm.exe $executeString 0` #The zero prevents the textual output to the REPL
 
-    vvwmTransferFileName = string(ui.workingPath, ui.pwcName, "_", ui.scenarioName, "_vvwmTransfer.txt")
-        # IF this is the first run after a PRZM run, make a safe copy - allows direct comparison of what enters the pond
-    if ui.isFirstRun
-        cp(string(ui.workingPath, "vvwmTransfer.txt"), string(vvwmTransferFileName[1:end-4], "_sansVFS.txt"), force = true)
-        rm(string(ui.workingPath, "vvwmTransfer.txt"))
-    end
-    vvwm = `$exePath\\vvwm.exe $vvwmTransferFileName`
     swiFileName = string(ui.workingPath, ui.pwcName, ".SWI")
     if isfile(swiFileName)
         # Do nothing
     else
         swiFileName = string(ui.workingPath, ui.pwcName, ".PWC")
     end
+
+    swi = open(swiFileName, "r")
+
+    # The PWC format is slightly different than the SWI format
+    # Check the end of the first line of the file for the model version number
+    isPWCFormat = parse(Float64, split(readline(swi))[end]) >= 2
+    close(swi)
+
+    vvwmTransferFileName = string(ui.workingPath, ui.pwcName, "_", ui.scenarioName, "_vvwmTransfer.txt")
+    # IF this is the first run after a PRZM run, make a safe copy - allows direct comparison of what enters the pond
+    if ui.isFirstRun
+        cp(string(ui.workingPath, "vvwmTransfer.txt"), string(vvwmTransferFileName[1:end-4], "_sansVFS.txt"), force = true)
+        rm(string(ui.workingPath, "vvwmTransfer.txt"))
+    end
+    
+if isPWCFormat
+    vvwm = `$exePath\\VVWM.exe $vvwmTransferFileName`
+else
+    vvwm = `$exePath\\VVWM-forPWC1.52.exe $vvwmTransferFileName`
+end
+
     przmInName = string(ui.workingPath, projectName, "_before.zts")
     #przmInName = string(workingPath, projectName, "NM.zts")
-    cp(string(ui.workingPath,ui.pwcName,".zts"), przmInName, force = true)
-    przmOutName = string(ui.workingPath,ui.stripWidthInM,"m_",projectName, ".zts")
+    cp(string(ui.workingPath, ui.pwcName, ".zts"), przmInName, force = true)
+    przmOutName = string(ui.workingPath, ui.stripWidthInM, "m_", projectName, ".zts")
     #For now, since we don't really need an HPF - could create from dvf or met right here
     #In future, should explore real hourly with the 'new' met data
     hpfInName = string(ui.workingPath, projectName, ".HPF")
     prjInName = string(ui.workingPath, projectName, ".prj")
     prjOutName = string(ui.workingPath, projectName, runNumber, ".prj")
-    
-    scnFileName = string(ui.workingPath, readlines(swiFileName)[49], ".SCN")
+
+    #scnFileName = string(ui.workingPath, readlines(swiFileName)[49], ".SCN")
+    scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN") #Use the scenario file name from the VVWMTransfer file.
     if isfile(scnFileName)
         # Do nothing
     else
@@ -246,13 +266,13 @@ function writeFileNames(ui::userInputs)
     else
         dailyWeatherFileName = string(ui.workingPath, split(readlines(scnFileName)[2], "\\")[end])
     end
-    thetaInName = string(ui.turfPath,split(readlines(scnFileName)[2], "\\")[end][1:(end-4)], "Turf.zts")
+    thetaInName = string(ui.turfPath, split(readlines(scnFileName)[2], "\\")[end][1:(end-4)], "Turf.zts")
 
     #Create a project file for VFSMOD to read the file names too
-    fileTypes = ["ikw","iso","igr","isd","irn","iro","iwq","og1","og2","ohy","osm","osp","owq"]
+    fileTypes = ["ikw", "iso", "igr", "isd", "irn", "iro", "iwq", "og1", "og2", "ohy", "osm", "osp", "owq"]
     prj = open(prjOutName, "w")
     for i in 1:length(fileTypes)
-        write(prj, string(fileTypes[i],"=",projectName,runNumber,".",fileTypes[i]),"\n")
+        write(prj, string(fileTypes[i], "=", projectName, runNumber, ".", fileTypes[i]), "\n")
     end
     close(prj)
 
@@ -272,7 +292,7 @@ function writeFileNames(ui::userInputs)
     osmFileName = string(ui.workingPath, readlines(prjOutName)[11][5:end])
 
     #Place all of these in a struct so they cannot be accidentally overwritten
-    inOutNames = inOutFileNames(vfsmod = vfsmod, vvwm = vvwm, przmInName = przmInName, thetaInName = thetaInName, przmOutName = przmOutName, hpfInName = hpfInName, prjInName = prjInName, prjOutName = prjOutName, swiFileName = swiFileName, scnFileName = scnFileName, dailyWeatherFileName = dailyWeatherFileName, ikwOutName = ikwOutName, irnOutName = irnOutName, iroOutName = iroOutName, isoOutName = isoOutName, isdOutName = isdOutName, iwqOutName = iwqOutName, owqFileName = owqFileName, igrOutName = igrOutName, osmFileName = osmFileName, vvwmTransferFileName = vvwmTransferFileName)
+    inOutNames = inOutFileNames(vfsmod = vfsmod, vvwm = vvwm, przmInName = przmInName, thetaInName = thetaInName, przmOutName = przmOutName, hpfInName = hpfInName, prjInName = prjInName, prjOutName = prjOutName, swiFileName = swiFileName, isPWCFormat = isPWCFormat, scnFileName = scnFileName, dailyWeatherFileName = dailyWeatherFileName, ikwOutName = ikwOutName, irnOutName = irnOutName, iroOutName = iroOutName, isoOutName = isoOutName, isdOutName = isdOutName, iwqOutName = iwqOutName, owqFileName = owqFileName, igrOutName = igrOutName, osmFileName = osmFileName, vvwmTransferFileName = vvwmTransferFileName)
     return inOutNames
 end
 
@@ -280,7 +300,7 @@ end
 # There are two versions: one which interprets daily precipitation files (for all Canadian scenarios) and one which interprets hourly precipitation files
 #This takes a vector of HOURLY rain intensities and writes out an irn file of durations and intensities
 #This version trims zeroes off both ends to reduce run time of VFSMOD
-function writePrecipitation(row::DataFrame,fn)
+function writePrecipitation(row::DataFrame,fns::inOutFileNames)
     #Containers
     times = Vector{Int16}()
     rates = Vector{Float32}()
@@ -333,7 +353,7 @@ function writePrecipitation(row::DataFrame,fn)
     #VFSMOD expects a description of the data at the top of the data
     pushfirst!(times, length(times))
     pushfirst!(rates, maximum(rates))
-    irn = open(fn, "w")
+    irn = open(fns.irnOutName, "w")
     for j in 1:length(times)
         write(irn, string(@sprintf("%9s",times[j]), "  ", @sprintf("%.4E",rates[j])), "\n")
         #write(irn, string(" ", @sprintf("%08u",times[j]), "  ", @sprintf("%.4E",rates[j])), "\n")
@@ -341,74 +361,87 @@ function writePrecipitation(row::DataFrame,fn)
     close(irn)
     return stormTime, storm
 end
-# This version takes a daily rain amount and generates an stormTime seconds long storm from it
-function writePrecipitation(precip::Float64, stormTime::Int64, fn)
+# This version takes a daily rain amount and generates a stormTime seconds long storm from it
+# The hyetograph is rectangular
+function writePrecipitation(precip::Float64, stormTime::Int64, fns::inOutFileNames)
 
     numberOfDataInAFakeStorm = 4
     startOfStorm = 0
-    oneSecondAfterStorm = stormTime +1
-    secondlyRate = precip/constants().cmInAMeter/stormTime #.dvf is in cm/storm, rainfall intensity in .irn is in m/s
-    # THere are two hours of simulation after the storm
-    endOfSimulationTime = stormTime + 2*constants().secondsInAnHour
+    oneSecondAfterStorm = stormTime + 1
+    secondlyRate = precip / constants().cmInAMeter / stormTime #.dvf is in cm/storm, rainfall intensity in .irn is in m/s
+    # There are two hours of simulation after the storm
+    # endOfSimulationTime = stormTime + 2*constants().secondsInAnHour
+    # 2022 guidance suggests 1.25 times the storm length instead of 2 hours (which is 2 hours for an 8-hour storm)
+    endOfSimulationTime = stormTime * 1.25
     # Unless, of course, the storm lasts for > 22 hours
-    if endOfSimulationTime > constants().hoursInADay*constants().secondsInAnHour
-        endOfSimulationTime = constants().hoursInADay*constants().secondsInAnHour
+    if endOfSimulationTime > constants().hoursInADay * constants().secondsInAnHour
+        endOfSimulationTime = constants().hoursInADay * constants().secondsInAnHour
     end
 
-    irn = open(fn, "w")
+    irn = open(fns.irnOutName, "w")
     # The first line has the number of events to read and the maximum rate, which is the same as the rate, since the hydrograph is square
-    write(irn, string(@sprintf("%9s",numberOfDataInAFakeStorm), "  ", @sprintf("%.4E",secondlyRate)), "\n")
-    write(irn, string(@sprintf("%9s",startOfStorm), "  ", @sprintf("%.4E",secondlyRate)), "\n")
-    write(irn, string(@sprintf("%9s",stormTime), "  ", @sprintf("%.4E",secondlyRate)), "\n")
-    write(irn, string(@sprintf("%9s",oneSecondAfterStorm), "  ", @sprintf("%.4E",0.0)), "\n")
-    write(irn, string(@sprintf("%9s",endOfSimulationTime), "  ", @sprintf("%.4E",0.0)), "\n")
+    write(irn, string(@sprintf("%9s", numberOfDataInAFakeStorm), "  ", @sprintf("%.4E", secondlyRate)), "\n")
+    write(irn, string(@sprintf("%9s", startOfStorm), "  ", @sprintf("%.4E", secondlyRate)), "\n")
+    write(irn, string(@sprintf("%9s", stormTime), "  ", @sprintf("%.4E", secondlyRate)), "\n")
+    write(irn, string(@sprintf("%9s", oneSecondAfterStorm), "  ", @sprintf("%.4E", 0.0)), "\n")
+    write(irn, string(@sprintf("%9s", endOfSimulationTime), "  ", @sprintf("%.4E", 0.0)), "\n")
     close(irn)
     #rain = Array{Float64,2}(undef,200,2)
     rain = zeros(Float64, 200, 2)
-    rain[1:numberOfDataInAFakeStorm,1:2] = hcat([startOfStorm,stormTime,oneSecondAfterStorm,endOfSimulationTime],[secondlyRate,secondlyRate,0.0,0.0])
+    rain[1:numberOfDataInAFakeStorm, 1:2] = hcat([startOfStorm, stormTime, oneSecondAfterStorm, endOfSimulationTime], [secondlyRate, secondlyRate, 0.0, 0.0])
     storm = rainInput(nrain = numberOfDataInAFakeStorm, rpeak = secondlyRate, rain = rain)
     return storm
 end
 
 # this takes the scenarioParameters struct and writes out the .iso file for VFSMOD
-function writeSoil(θ, scen::scenarioParameters, fn)
+function writeSoil(θ, scen::scenarioParameters, fns::inOutFileNames)
     soil = soilParameters(θI = θ)
-    iso = open(fn, "w")
+    iso = open(fns.isoOutName, "w")
     write(iso, string("  ", @sprintf("%.2E",scen.VKS),"  ", @sprintf("%.4f",scen.SAV),"  " ,@sprintf("%.4f",scen.θSoil),"  " ,@sprintf("%.4f",soil.θI),"  ", @sprintf("%.4f",soil.SM),"  ", @sprintf("%.4f",soil.SCHK)))
     close(iso)
 end
 
 #This function takes the daily runoff from PRZM, a storm length, and a filemane
 #and writes an iro file
-#There are many assumptions built in, brought forward from the example pipe
-function writeRunoff(RUNF0,scen::scenarioParameters,filter::filterParameters, eventLength,fn)
+#This has been updated to reflect the 2022 guidance from the VFS Working Group
+function writeRunoff(RUNF0,scen::scenarioParameters,filter::filterParameters, eventLength,fns::inOutFileNames)
 
     fieldAreaInMSq = scen.fieldAreaInHa*constants().mSqInAHa #in ha - confirmed in VVWM manual that runoff is normalized to FIELD area (not waterbody area)
 
     SWIDTH = filter.FWIDTH#(sqrt(filter.areaInMSq/π)+filter.FWIDTH)*2π
     SLENGTH = fieldAreaInMSq/SWIDTH
 
-    timeStep::Int64 = (constants().secondsInAnHour/2) # Arbitrary choice - half an hour
+    #timeStep::Int64 = (constants().secondsInAnHour/2) # Arbitrary choice - half an hour
     #The 8 hour storms in the example have 10 time steps - it is not known why
     #For fun, here, the time step is set and the number derivied - which will allow the timestep to be a user input in future
-    numberOfSteps::Int16 = eventLength/timeStep
+    #numberOfSteps::Int16 = eventLength/timeStep
+    NBCROFF::Int64 = 3 # As per 2022 guidance for a triangular hydrograph
     #Get from cm/ha/day to m^3/day, and then per second
     runOn = RUNF0/constants().cmInAMeter*fieldAreaInMSq/eventLength
+    BCROPEAK = 2 * runOn
     #Containers
     times = Vector{Int16}()
     rates = Vector{Float32}()
 
     #write the times and the rate for the event
-    for i in 0:numberOfSteps
+#=     for i in 0:numberOfSteps
         push!(times,i*timeStep)
         push!(rates,runOn)
-    end
+    end =#
+
+    # Write the times and rate for the triangular hydrograph
+    push!(times, 0)
+    push!(rates, 0)
+    push!(times, Int(floor(eventLength/2.67+0.5)))
+    push!(rates, BCROPEAK)
+    push!(times, eventLength)
+    push!(rates, 0)
 
     #The second line has the number of timesteps and the peak rate of the hydrograph
-    pushfirst!(times, numberOfSteps)
-    pushfirst!(rates, maximum(rates))
+    pushfirst!(times, NBCROFF)
+    pushfirst!(rates, BCROPEAK)
 
-    iro = open(fn, "w")
+    iro = open(fns.iroOutName, "w")
     write(iro, string(" ",SWIDTH," ",SLENGTH), "\n")
     for i = 1:length(times)
         write(iro, string(@sprintf("%9s",times[i]), " ", @sprintf("%.4E", rates[i])), "\n")
@@ -417,8 +450,9 @@ function writeRunoff(RUNF0,scen::scenarioParameters,filter::filterParameters, ev
 end
 
 # this populates the scenarioParameters struct from the information in the PWC .SCN File
-function readScenarioParameters(fn,VKS::Float64,slpPrct::Float64)
-    scn = open(fn, "r")
+# It causes more problems than it's worth another version reads from the .SWI or .PWC directly
+function readScenarioParameters(scnFileName, usInp::userInputs)
+    scn = open(scnFileName, "r")
     #Throw away the first three lines
     for i in 1:6
         readline(scn)
@@ -442,6 +476,7 @@ function readScenarioParameters(fn,VKS::Float64,slpPrct::Float64)
         readline(scn)
     end
     slope = readfirst(scn)/constants().cent #49 - must be fractional, not percent
+    slpPrct::Float64 = usInp.slope
     if slpPrct >= 0 # The user has specified a slope (in percent) to override the scenario
         slope = slpPrct/constants().cent # Must be a fraction, not a percent
     end
@@ -466,6 +501,7 @@ function readScenarioParameters(fn,VKS::Float64,slpPrct::Float64)
     
     #Alternate methods to determine Ksat (a.k.a VKS)
     topsoil = 1 #This is a qualitative binary in the equation - set here to 1 so that all VFS soils are topsoils when using Wösten
+    VKS::Float64 = usInp.Ksat
     if VKS < -9998.999 #it's not an integer, so just being cautious
         VKS = texture[1]
     elseif -9999 < VKS < 0.0 # use the empirical equation from Wösten et al., 1999 (Geoderma 90 1999 169–185)
@@ -489,6 +525,131 @@ function readScenarioParameters(fn,VKS::Float64,slpPrct::Float64)
         #Do Nothing: keep the user's input Ksat
     end
     scenStruct = scenarioParameters(fieldAreaInHa = fieldArea, pondAreaInM2 = pondArea, hydraulicLengthInM = hydraulicLength, OCP = ocPercent, CCP = clayPercent, FC = fieldCapacity, COARSE = sandPercent/constants().cent, POR = POR, VKS = VKS, SAV = texture[2], DP = texture[3], θSoil = POR, SOA = slope)
+
+    return scenStruct
+end
+
+function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
+    swi = open(fns.swiFileName, "r")
+    
+    # The PWC format is slightly different than the SWI format
+    
+    # The first 75 lines are the same for both PWC and SWI
+    #Throw away the first 54 lines
+    for i in 1:54
+        readline(swi)
+    end
+    fieldArea = 10.0
+    fldArea = readline(swi) #55
+    if fldArea != ""
+        fieldArea = parse(Float64, fldArea) / constants().mSqInAHa
+    end
+    pondArea = 10000.0
+    pndArea = readline(swi) #56
+    if pndArea != ""
+        pondArea = parse(Float64, pndArea)
+    end
+    for i in 57:61
+        readline(swi)
+    end
+    benthicPorosity = readfirst(swi) # 62
+    ρBenthicBulk = readfirst(swi) # 63
+
+    # The rest of the values are from different locations in the SWI or PWC file
+    if !fns.isPWCFormat
+        for i in 64:96
+            readline(swi)
+        end
+        slope = readfirst(swi) #97 currently in percent
+
+        hydraulicLength = readfirst(swi) #98 in m
+        for i in 99:100
+            readline(swi)
+        end
+        ρ = readfirst(swi) #101 in g per cm^3 (or tonnes per m^3)
+        fieldCapacity = readfirst(swi) #102
+        wiltingPoint = readfirst(swi) #103
+        ocPercent = readfirst(swi) #104
+        readline(swi) #105
+        sandPercent = readfirst(swi) #106
+        clayPercent = readfirst(swi) #107
+    else
+        pwcLine = ""
+        # Skip to the Soil Information section
+        while pwcLine != "*** Soil Information ***"
+            pwcLine = readline(swi)
+        end
+        readline(swi) # skip a line
+        #thisLine = readline(swi)
+        slope, hydraulicLength = split(readline(swi),",")[2:3]
+        slope = parse(Float64,slope)
+        hydraulicLength = parse(Float64,hydraulicLength)
+        while pwcLine != "*** Horizon Info *******"
+            pwcLine = readline(swi)
+        end
+        readline(swi) # skip a line
+        readline(swi) # skip a line
+        ρ = readfirst(swi)
+        fieldCapacity = readfirst(swi) 
+        wiltingPoint = readfirst(swi) 
+        ocPercent = readfirst(swi) 
+        readline(swi) # skip a line
+        sandPercent = readfirst(swi) 
+        clayPercent = readfirst(swi) 
+    end
+
+    close(swi)
+
+    userSlope::Float64 = usInp.slope
+    if userSlope >= 0 # The user has specified a slope (in percent) to override the scenario
+        slope = userSlope
+    end
+
+    slope = slope / constants().cent # Must be a fraction, not a percent
+
+    POR = 1 - (ρ / constants().ρQuartz)
+    texture = getSoilClass(sandPercent, (100 - sum([sandPercent, clayPercent])), clayPercent)
+    #This derivation probably highlights a logical flaw in determining the bulk density of sediments
+    #In PWC scenario development rather than providing a better value for sediment bulk density
+    #It shall be left here but not used in the writing of the sediment input file for now
+    ρSedimentParticle = (ρBenthicBulk - benthicPorosity * constants().ρWater) / (1 - benthicPorosity)
+
+    #Alternate methods to determine Ksat (a.k.a VKS)
+    topsoil = 1 #This is a qualitative binary in the equation - set here to 1 so that all VFS soils are topsoils when using Wösten
+    VKS::Float64 = usInp.Ksat
+    if VKS < -9998.999 #it's not an integer, so just being cautious
+        VKS = texture[1]
+    elseif -9999 < VKS < 0.0 # use the empirical equation from Wösten et al., 1999 (Geoderma 90 1999 169–185)
+        silt = (100 - sum([sandPercent, clayPercent]))
+        om = ocPercent * 1.724 # Empirical adjustment from organic carbon percent to organic matter percent
+        Wösten = exp(7.755
+                     + 0.0352 * silt
+                     + 0.93 * topsoil
+                     -
+                     0.967 * ρ^2
+                     -
+                     0.000484 * clayPercent^2
+                     -
+                     0.000322 * silt^2
+                     +
+                     0.001 / silt
+                     -
+                     0.0748 / om
+                     -
+                     0.643 * log(silt)
+                     -
+                     0.01398 * ρ * clayPercent
+                     -
+                     0.1673 * ρ * om
+                     +
+                     0.02986 * topsoil * clayPercent
+                     -
+                     0.03305 * topsoil * silt)
+        VKS = Wösten / constants().cmInAMeter / constants().hoursInADay / constants().secondsInAnHour
+    else
+        #Do Nothing: keep the user's input Ksat
+    end
+    scenStruct = scenarioParameters(fieldAreaInHa = fieldArea, pondAreaInM2 = pondArea, hydraulicLengthInM = hydraulicLength, OCP = ocPercent, CCP = clayPercent, FC = fieldCapacity, COARSE = sandPercent / constants().cent, POR = POR, VKS = VKS, SAV = texture[2], DP = texture[3], θSoil = POR, SOA = slope)
 
     return scenStruct
 end
@@ -524,7 +685,7 @@ function getSoilClass(sand::Real,silt::Real,clay::Real)
 end
 
 # This takes the runoff from the PRZM .zts file and writes the .isd file for VFSMOD
-function writeSediment(RUNF0,ESLS0, scen, fn)
+function writeSediment(RUNF0,ESLS0, scen, fns)
     #ESLS0 comes in in tonnes/ha/day WRONG #############
     # ESL0 comes in tonnes/day
     solid = ESLS0*constants().gInATonne #now in grams/day
@@ -535,7 +696,7 @@ function writeSediment(RUNF0,ESLS0, scen, fn)
 
     CI = solid/liquid #g/cm^3
     sediment = sedimentParameters(CI = CI)
-    isd = open(fn, "w")
+    isd = open(fns.isdOutName, "w")
     write(isd, string("   ", sediment.NPART, "  ", @sprintf("%.4f",scen.COARSE), "  ", @sprintf("%.10f",sediment.CI),"  ", @sprintf("%.4f",scen.POR)),"\n")
     #Note that this currently writes sediment.SG (just the density of silicon) rather than scen.ρSediment
     write(isd, string("   ", @sprintf("%.4f",scen.DP),"  ", @sprintf("%.4f",scen.ρSed)))
@@ -565,29 +726,33 @@ function writeFilterStrip(width::Float64, scen::scenarioParameters, shapeFlag::I
     # i.e., width and length are reversed
 
     # This calculation is based on one from the example sptreadsheet, with no citation or reason presented
-    # It may appear in the VFSMOD guidance
-    nodes = width/3*11/2
+    # nodes = width/3*11/2
+    # As per the 2022 guidance
+    nodes = width/0.15
 
-    # There appears to be a minimum value of 11
-    # This method is slightly biased in that it rounds all even integers up
+    # There is a minimum value of 11
     if nodes < 11
         nodes = 11
     end
 
     #Any values are rounded to the nearest odd number
+    #Even integers are always increased
     nodes = floor(nodes/2)*2+1
 
-    if shapeFlag == 1 # a round VFS around a round pond
+    if shapeFlag == 1 # a square field with a rectangular pond and VFS
+        # The length of the strip is just the square root of the field area - the hydraulic lentgh of the field is ignored
+        length = sqrt(scen.fieldAreaInHa * constants().mSqInAHa)
+    elseif shapeFlag == 2 # a round VFS around a round pond
         # Length calculated as the area over the width
         # Area is the difference between the circle within the outer edge ofthe strip and the area of the pond
         length = (pi*(sqrt(scen.pondAreaInM2/pi)+width)^2-scen.pondAreaInM2)/width
         # Old length was middle of strip
         #length = (sqrt(scen.pondAreaInM2/pi)+width/2)*2*pi
-    elseif shapeFlag == 2 # A square VFS around a square pond
+    elseif shapeFlag == 3 # A square VFS around a square pond
         # Length calculated as the area over the width
         # Area is the difference between the square within the outder edge of the strip and the area of the pond
         length = ((sqrt(scen.pondAreaInM2) + 2 * width)^2 - scen.pondAreaInM2)/width
-    elseif shapeFlag == 3 # a squarish field dictates the length of the interface between the pond and a rectangular VFS on one side
+    elseif shapeFlag == 4 # a squarish field dictates the length of the interface between the pond and a rectangular VFS on one side
         length = scen.fieldAreaInHa * constants().mSqInAHa / scen.hydraulicLengthInM
     else # this gives a square pond with a field on only one side, but this becomes the default
         # 
@@ -645,51 +810,50 @@ function readChemicalParameters(fn)#, chemStruct::chemicalParameters)
 end
 
 # This takes all sorts of stuff in order to write the .iwq file for VFSMOD
-function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem::chemicalParameters, scen::scenarioParameters, water::waterQualityParameters, airTempIn, day, owqfn, fn)
+function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem::chemicalParameters, scen::scenarioParameters, water::waterQualityParameters, airTempIn, day, fns::inOutFileNames)
     #Only need one datum from this file, but it's position changes depending on the number of days of degradation after the event - that is also in the file
-    # oldInBetweenDays = parse(Int64,split(readlines(owqfn)[13])[6])
 
-    owq = open(owqfn, "r")
+    owq = open(fns.owqFileName, "r")
     owqLine = ""
+    owqWord = ""
 
-    while owqLine != "Outputs" #scoot to the good stuff
+    while owqWord != "area:" #scoot to right area (to the normalized data),
+        #because there are two lines that end in "(mresn, IMOD=1)"
         owqLine = readline(owq)
         if length(split(owqLine)) > 0
-            owqLine = split(owqLine)[1]
+            owqWord = split(owqLine)[end]
         end
     end
 
-    for i in 1:19
-        readline(owq) #throw away 19 lines
+    while owqWord != "IMOB=1)" #scoot to right line
+        owqLine = readline(owq)
+        if length(split(owqLine)) > 0
+            owqWord = split(owqLine)[end]
+        end
     end
 
-    massInFilter = parse(Float64, split(readline(owq))[1])
+    mixingLayerResidue = parse(Float64, split(owqLine)[1]) # in mg/m2
     close(owq)
 
-    # This probably is no longer needed - VFSMOD returned garbage when it was passed garbage, which Hopefully is no longer happening
-    if isnan(massInFilter)
-        massInFilter = 0.0
-    end
-
-    massInLiquidInMg = RFLX1*scen.fieldAreaInHa*constants().mSqInAHa*constants().cmSqInAMSq*constants().mgInAGram #starts as g/cm2/day
-    massInSolidInMg = EFLX1*scen.fieldAreaInHa*constants().mSqInAHa*constants().cmSqInAMSq*constants().mgInAGram #starts in g/cm2/day
-    totalMassInMg = sum([massInFilter,massInLiquidInMg,massInSolidInMg])
-    dgPin = totalMassInMg/(scen.fieldAreaInHa*constants().mSqInAHa)
+    massInLiquidInMg = RFLX1 * scen.fieldAreaInHa * constants().mSqInAHa * constants().cmSqInAMSq * constants().mgInAGram #starts as g/cm2/day
+    massInSolidInMg = EFLX1 * scen.fieldAreaInHa * constants().mSqInAHa * constants().cmSqInAMSq * constants().mgInAGram #starts in g/cm2/day
+    totalMassInMg = sum([massInLiquidInMg, massInSolidInMg])
+    dgPin = totalMassInMg / (scen.fieldAreaInHa * constants().mSqInAHa)
 
     #In one scenario, it doesn't rain for 503 days, but VFSMOD will only let stuff degrade for 366 days
     if inBetweenDays > 365
         inBetweenDays = 365
     end
 
-    airTemps = airTempIn[day:day+inBetweenDays]
-    θs = thetaIn[day:day+inBetweenDays]
+    airTemps = airTempIn[day:day+inBetweenDays-1]
+    θs = thetaIn[day:day+inBetweenDays-1]
 
-    iwq = open(fn,"w")
-    write(iwq, string(" ", water.IQPRO),"\n")
-    write(iwq, string(" ", chem.IKD, " ", chem.KOCD, " ", scen.OCP, ), "\n")
+    iwq = open(fns.iwqOutName, "w")
+    write(iwq, string(" ", water.IQPRO), "\n")
+    write(iwq, string(" ", chem.IKD, " ", chem.KOCD, " ", scen.OCP,), "\n")
     write(iwq, string(" ", scen.CCP), "\n")
     write(iwq, string(" ", water.IDG), "\n")
-    write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML), "\n")
+    write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML, " ", chem.DGML, " ", mixingLayerResidue), "\n")
     for i in 1:length(airTemps)
         write(iwq, string(" ", airTemps[i]))
     end
@@ -698,6 +862,7 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
         write(iwq, string(" ", θs[i]))
     end
     write(iwq, "\n")
+    write(iwq, string(" ", water.IMOB), "\n")
     close(iwq)
 end
 
@@ -708,27 +873,20 @@ function writeDummyOWQFile(fn)
     for i in 1:12
         write(owq, "\n")
     end
-    write(owq, "    No. of days between events=    0", "\n") #13
 
-    for i in 14:16
-        write(owq, "\n")
-    end
-    write(owq, " Outputs for Water Quality", "\n") #17
-
-    for i in 18:36
-        write(owq, "\n")
-    end
-    write(owq, "            0.0 mg = Pesticide surface residue at next event (after degradation,  0 days)") #37
-
+    write(owq, string(0.0, " (mop)"), "\n")
+    write(owq, string(0.0, " (mod)"), "\n")
+    write(owq, string(0.0, " area:"), "\n")
+    write(owq, string(0.0, " IMOB=1)"), "\n")
 
     close(owq)
 end
 
 # This takes the outputs from VFSMOD and  returns a waterQualityOutput struct that can be written directly to the .zts file
-function readWaterQuality(scen::scenarioParameters, filter::filterParameters, owqfn, osmfn)
+function readWaterQuality(scen::scenarioParameters, filter::filterParameters, fns::inOutFileNames)
 
-    osm = open(osmfn, "r")
-    owq = open(owqfn, "r")
+    osm = open(fns.osmFileName, "r")
+    owq = open(fns.owqFileName, "r")
     osmLine = ""
 
     while osmLine != "OUTPUTS" # scoot to the good stuff
@@ -749,39 +907,25 @@ function readWaterQuality(scen::scenarioParameters, filter::filterParameters, ow
 
     sedimentInG = parse(Float64, split(readline(osm))[6])
     owqLine = ""
+    owqWord = ""
 
-    while owqLine != "Outputs"
+    # Ignore the entire file until the first line that ends in (mop)
+    while owqWord != "(mop)"
         owqLine = readline(owq)
         if length(split(owqLine)) > 0
-            owqLine = split(owqLine)[1]
+            owqWord = split(owqLine)[end]
         end
     end
 
-    for i in 1:33
-        readline(owq) #throw away 5 lines
-    end
-
-    pesticideSolidInmg = parse(Float64, split(readline(owq))[1])
+    # That line has the pesticide mass on the solids leaving the strip
+    pesticideSolidInmg = parse(Float64, split(owqLine)[1])
+    # The next line has the pesticide mass in the dissolved phase leaving the strip
     pesticideWaterInmg = parse(Float64, split(readline(owq))[1])
 
-    # These are porbably no longer needed - VFSMOD returned garbage when it was passed garbage, which Hopefully is no longer happening
-    if isnan(runoffInM3)
-        runoffInM3 = 0.0
-    end
-    if isnan(sedimentInG)
-        sedimentInG = 0.0
-    end
-    if isnan(pesticideWaterInmg)
-        pesticideWaterInmg = 0.0
-    end
-    if isnan(pesticideSolidInmg)
-        pesticideSolidInmg = 0.0
-    end
-
-    water = runoffInM3*constants().cmInAMeter/filter.areaInMSq # now in cm/day
-    solids = sedimentInG/constants().gInATonne # now in tonnes/day
-    pesticideInWater = pesticideWaterInmg/constants().mgInAGram/(filter.areaInHa*constants().mSqInAHa*constants().cmSqInAMSq) #now in g/cm2/day
-    pesticideInSolids = pesticideSolidInmg/constants().mgInAGram/(filter.areaInHa*constants().mSqInAHa*constants().cmSqInAMSq) #now in g/cm2/day
+    water = runoffInM3 * constants().cmInAMeter / filter.areaInMSq # now in cm/day
+    solids = sedimentInG / constants().gInATonne # now in tonnes/day
+    pesticideInWater = pesticideWaterInmg / constants().mgInAGram / (filter.areaInHa * constants().mSqInAHa * constants().cmSqInAMSq) #now in g/cm2/day
+    pesticideInSolids = pesticideSolidInmg / constants().mgInAGram / (filter.areaInHa * constants().mSqInAHa * constants().cmSqInAMSq) #now in g/cm2/day
 
     close(osm)
     close(owq)
@@ -884,9 +1028,14 @@ function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters, 
     for i = 73:83 #length(vvwm)
         write(vvwmOut, string("\"",workingPath,"VFS_",split(readline(vvwmIn), "\\")[end]), "\n")
     end
+    if fileNames.isPWCFormat
+        for i in 84:86
+            write(vvwmOut, readline(vvwmIn), "\n")
+        end
+    end
     close(vvwmIn)
     close(vvwmOut)
-    return [oldCSV[1:end-1],newCSV[1:end-1],oldTXT[1:end-1],newTXT[1:end-1]]
+    return [oldCSV[1:end-1], newCSV[1:end-1], oldTXT[1:end-1], newTXT[1:end-1]]
 end
 
 # This opens the output of VVWM and returns a dataframe that is easy to plot
@@ -964,7 +1113,7 @@ function vfsMain(usInp::userInputs)
 
     airTempIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false))[!,4]
     #Need the scenario information to be avaialable to several methods
-    scenario = readScenarioParameters(inOutNames.scnFileName, usInp.Ksat, usInp.slope)
+    scenario = readScenarioParameters(inOutNames, usInp)
     chem = readChemicalParameters(inOutNames.swiFileName)
 
     # Properties of the filter strip do not change during the run
@@ -974,14 +1123,14 @@ function vfsMain(usInp::userInputs)
     water = waterQualityParameters(IQPRO = usInp.pesticideEquation)
 
     #An index for keeping track of days bewtween simulations, to account for degradation
-    inBetweenDays = 0
+    inBetweenDays = 1
 
     # In order to keep the load in the VFS current, VFSMOD is run for every runoff event
     for day in 1:size(przmIn, 1)
 
         # Although VVWM probably doesn't read the dates - PRZM calls them 'dummy fields'
         # It's nice to keep the data and the format "just in case"
-        yr = string(Int8(przmIn.Yr[day]))
+        yr = string(Int64(przmIn.Yr[day]))
         mo = Int8(przmIn.Mo[day])
         if mo < 10
             mo = string(" ", string(mo))
@@ -997,18 +1146,19 @@ function vfsMain(usInp::userInputs)
         end
 
         # If there is runoff, do all the stuff to run VFSMOD;
-        #if it doesn't, just copy the line from the old .zts file
-    #    if precipIn.Total[day] > 0 #Here we go!
+        #if there isn't, just copy the line from the old .zts file
+        #Here we go!
         if przmIn.RUNF0[day] > 0
-            #Need to know the number of days until the NEXT runoff vent to be simulated
-            #This used by VFSMOD to calculate degradation in the strip between runoff events
-            inBetweenDays = 0
-            # Need to prevent an end-of-read error if it rains on the last day
+            #Need to know the number of days until the NEXT runoff event to be simulated
+            #This is used by VFSMOD to calculate degradation in the strip between runoff events
+            # The 2022 guidance clarifies that it INCLUDES the day of a runoff event, so it starts at 1
+            inBetweenDays = 1
+            # Need to prevent an end-of-read error if there is runoff on the last day
             if length(przmIn.RUNF0) - day > 0
-                while przmIn.RUNF0[day+1+inBetweenDays] == 0
-                    # Need to prevent an end-of=read error after the last rain event
+                while przmIn.RUNF0[day+inBetweenDays] == 0
+                    # Need to prevent an end-of-read error after the last runoff event too
                     inBetweenDays += 1
-                    if inBetweenDays+1 > length(przmIn.RUNF0)-day
+                    if inBetweenDays > length(przmIn.RUNF0)-day
                         break
                     end
                 end
@@ -1018,27 +1168,33 @@ function vfsMain(usInp::userInputs)
             #The runoff calculation needs the total event time, either returned from the rain function, if using hourly weather,
             #Or set by the user if using daily weather information
             if usInp.useHPF
-                eventTime, irn = writePrecipitation(precipIn[day,:][5:end], inOutNames.irnOutName)
+                eventTime, irn = writePrecipitation(precipIn[day,:][5:end], inOutNames)
             else
                 eventTime = stormLength
-                irn = writePrecipitation(precipIn.Total[day], stormLength, inOutNames.irnOutName)
+                irn = writePrecipitation(precipIn.Total[day], stormLength, inOutNames)
             end
             #Next, the runoff from the field
-            irn = writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames.iroOutName)
+            # 2022 Guidance indicates that runoff from rain gives an 8 hour hydrograph, but runoff from snowmelt should give a 12 hour hydrograph
+            if precipIn.Total[day] > 0
+                eventTime = stormLength
+            else
+                eventTime = 12
+            end
+            iro = writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames)
 
             #write the soil file
-            writeSoil(thetaIn[(day)], scenario, inOutNames.isoOutName)#Want the
+            writeSoil(thetaIn[(day)], scenario, inOutNames) #Want the
 
             #And the sediment file
-            writeSediment(przmIn.RUNF0[day], przmIn.ESLS0[day], scenario, inOutNames.isdOutName)
+            writeSediment(przmIn.RUNF0[day], przmIn.ESLS0[day], scenario, inOutNames)
 
             #And finally, the water quality
-            writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, water, airTempIn, day, inOutNames.owqFileName, inOutNames.iwqOutName)
+            writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, water, airTempIn, day, inOutNames)
             #Write a line to the new zts file
             #write(przmOut, "Hey...you should have run VFSMOD!", "\n")
             run(inOutNames.vfsmod)
             println(string("Simulation: ",day))
-            vfsOut = readWaterQuality(scenario, filterStrip, inOutNames.owqFileName, inOutNames.osmFileName)
+            vfsOut = readWaterQuality(scenario, filterStrip, inOutNames)
             write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
 
         else #There was no rain, so no change in the VFS
