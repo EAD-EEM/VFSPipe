@@ -1,0 +1,6 @@
+include("C:\\Users\\hcuser\\github\\VFSPipe\\src\\VFSPipe.jl")
+"Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\10m_VFS_TestCasePWC2.0-PEI_Potato-PEI_Custom_Parent.txt"
+yesVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\10m_VFS_TestCasePWC2.0-PEI_Potato-PEI_Custom_Parent.txt")
+noVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\TestCasePWC2.0-PEI_Potato-PEI_Custom_Parent.txt")
+yesVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\10m_VFS_TestCase-PEI_Potato-PEI_Custom_Parent.txt")
+noVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\TestCase-PEI_Potato-PEI_Custom_Parent.txt")
