@@ -1,0 +1,87 @@
+---
+title: "VFSMOD with PWC Analysis"
+author: "Your Name Here"
+date: '2021-02-19'
+output:
+  html_notebook:
+    code_folding: hide
+  html_document:
+    df_print: paged
+---
+
+
+```{r,echo=FALSE, results="hide", warning=FALSE, message=FALSE}
+## YOU DO NOT NEED TO CHANGE ANYTHING IN THIS CODE BLOCK - YOU CAN HIDE IT BY CLICKING THE ARROW ON THE LEFT AT LINE 13
+require(tidyr);require(dplyr);require(ggplot2);require(knitr); require(stringr)
+
+
+getVFSDiff <- function(fldr, vfsWidth = 0.0, simYears = 50){
+  fns <- dir(fldr, pattern = "Parent.txt", recursive = TRUE)
+  concs <- do.call(rbind, lapply(fns, FUN = getConcsFromTxt, fldr = fldr, vfsWidth=vfsWidth, numRows = simYears))
+  concs
+}
+
+getConcsFromTxt <- function(fn, fldr, vfsWidth, numRows){
+  concs <- read.csv(paste( fldr, "/", fn[1], sep = ""), skip=19, nrows=numRows, header=FALSE, sep="")
+  names(concs) <- c("Year","Peak","96-Hour","21-Day","60-Day","90-Day","365-Day","Benthic-Peak","Benthic-21-Day")
+  concs$Run <- basename(fn[1])
+  if (unlist(strsplit(concs$Run[1],"_"))[1] == "VFS"){
+      concs$Type <- "VFS"
+      if (vfsWidth != 0.0){
+        concs$Type <- paste(vfsWidth, "m VFS", sep="")
+      }
+      concs$Active <- unlist(strsplit(concs$Run,"_"))[2]
+  }
+  else{
+    concs$Type <- "No VFS"
+    concs$Active <- unlist(strsplit(concs$Run,"_"))[1]
+  }
+ concs
+}
+
+`%notin%` <- Negate(`%in%`)
+```
+
+
+```{r}
+pathToVVWMResults <- getwd()
+vfsWidth <- 0.0
+```
+
+
+## Results
+
+The following charts display the EECs with and without running VFSMOD for a single simulation.
+
+```{r}
+result <- getVFSDiff(pathToVVWMResults, vfsWidth = vfsWidth)
+qplot(Year, Peak, data=result %>% select(Type, Year, Peak, Active), color=Type) + facet_wrap(~Active) + xlab("Simulation Year") + theme(axis.text.x = element_text(angle = 70, hjust = 1))
+```
+
+A Reduction Efficiency (RE) for a VFS can be defined as:
+
+<center>$RE = 1-\frac{WithVFS}{WithoutVFS}\times100\%$</center>
+
+such that the RE is 1 when the VFS prevents 100% of the pesticide from entering the water body that would enter without it. RE calculated using the yearly **peaks**:
+
+```{r}
+VFSDescription <- unique(result$Type)[2]
+
+REPeak <- result %>% select(Year, Type, Peak, Active) %>% group_by(Active, Year) %>% spread(key = Type, value = Peak) %>% ungroup
+REPeak$RE <- (1-(REPeak[[VFSDescription]]/REPeak$`No VFS`))*100
+
+REYear <- result %>% select(Year, Type, `365-Day`, Active) %>% group_by(Active, Year) %>% spread(key = Type, value = `365-Day`) %>% ungroup
+REYear$RE <- (1-REYear[[VFSDescription]]/REYear$`No VFS`)*100
+
+qplot(Year, RE, data=REPeak %>% select(Year, RE, Active)) + facet_wrap(~Active) + xlab("Simulation Year") + ylab("Reduction Efficiency (%)") + theme(axis.text.x = element_text(angle = 70, hjust = 1)) + labs(title = paste("Reduction Efficiency of Peak EECs for", VFSDescription)) 
+ggsave("PeakReductionEfficiency.PNG", width = 7, height = 4.25)
+```
+
+ RE calculated using the yearly **averages**:
+ 
+```{r}
+qplot(Year, RE, data=REYear %>% select(Year, RE, Active)) + facet_wrap(~Active) + xlab("Simulation Year") + ylab("Reduction Efficiency (%)") + theme(axis.text.x = element_text(angle = 70, hjust = 1)) + labs(title = paste("Reduction Efficiency of Yearly Averaged EECs for", VFSDescription)) 
+ggsave("YearlyReductionEfficiency.PNG", width = 7, height = 4.25)
+```
+ 
+ 
