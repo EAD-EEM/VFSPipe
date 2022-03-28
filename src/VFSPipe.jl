@@ -92,5 +92,6 @@ end
 # Plots do not work within the loop structure
 # noVFS = getVVWMText(columnNames(),oldTXT)
 # yesVFS = getVVWMText(columnNames(),newTXT)
-#plot(noVFS.Run, [noVFS.Peak,yesVFS.Peak], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Peak Without VFS" "Peak With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
-#plot!(noVFS.Run, [noVFS.OneYear,yesVFS.OneYear], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Yearly Without VFS" "Yearly With VFS"], linecolor = ["Dark Orange" "Light Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
+# plot(noVFS.Run, [noVFS.Peak,yesVFS.Peak], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Peak Without VFS" "Peak With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
+# plot!(noVFS.Run, [noVFS.OneYear,yesVFS.OneYear], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Yearly Without VFS" "Yearly With VFS"], linecolor = ["Dark Orange" "Light Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
+# This is the edited branch
