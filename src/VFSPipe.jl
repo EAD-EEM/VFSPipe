@@ -16,7 +16,7 @@ pwcName = "TestCasePWC2.0-PEI"
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
 # Executables folder must contain vfsm.exe and vvwm.exe, as well as SoilTriangle.csv
-exePath = "Z:\\SharedwithVM\\VFS\\executables\\" # must end in a double back-slash or slash
+exePath = "Z:\\SharedwithVM\\VFS\\executables\\Test\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the pre-storm water content of the VFS, is found.
 turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\" # must end in a double back-slash or slash
