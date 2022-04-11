@@ -16,7 +16,7 @@ pwcName = "TestCasePWC2.0-PEI"
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
 # Executables folder must contain vfsm.exe and vvwm.exe, as well as SoilTriangle.csv
-exePath = "Z:\\SharedwithVM\\VFS\\executables\\" # must end in a double back-slash or slash
+exePath = "Z:\\SharedwithVM\\VFS\\executables\\Test\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the pre-storm water content of the VFS, is found.
 turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\" # must end in a double back-slash or slash
@@ -94,4 +94,3 @@ end
 # yesVFS = getVVWMText(columnNames(),newTXT)
 # plot(noVFS.Run, [noVFS.Peak,yesVFS.Peak], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Peak Without VFS" "Peak With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
 # plot!(noVFS.Run, [noVFS.OneYear,yesVFS.OneYear], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Yearly Without VFS" "Yearly With VFS"], linecolor = ["Dark Orange" "Light Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
-# This is the edited branch

@@ -257,7 +257,17 @@ end
     if isfile(scnFileName)
         # Do nothing
     else
-        scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN")
+        scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN2")
+        if isfile(scnFileName)
+            # Do nothing
+        else        
+            scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN")
+            if isfile(scnFileName)
+                #Do nothing
+            else
+                scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN2")
+            end
+        end
     end
 
     dailyWeatherFileName = readlines(scnFileName)[2]
@@ -825,14 +835,17 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
         end
     end
 
-    while owqWord != "IMOB=1)" #scoot to right line
-        owqLine = readline(owq)
-        if length(split(owqLine)) > 0
-            owqWord = split(owqLine)[end]
-        end
+while owqWord != "IMOB=1)" && owqWord != "days)" #scoot to right line, different by VFSMOD version
+    owqLine = readline(owq)
+    if length(split(owqLine)) > 0
+        owqWord = split(owqLine)[end]
     end
+end
 
-    mixingLayerResidue = parse(Float64, split(owqLine)[1]) # in mg/m2
+mixingLayerResidue = parse(Float64, split(owqLine)[1]) # in mg/m2
+
+
+
     close(owq)
 
     massInLiquidInMg = RFLX1 * scen.fieldAreaInHa * constants().mSqInAHa * constants().cmSqInAMSq * constants().mgInAGram #starts as g/cm2/day
@@ -982,7 +995,7 @@ function writePRZMTurf(turfPath) #Do you need these?
     for i = 1:(applicatations-1)
         readline(crop) #just throwing these out
     end
-    for i = 109:169
+    for i = 109:167
         write(turf, readline(crop), "\n")
     end
     write(turf, string("THET,0,TSER,   100,  100,    1.0"))
@@ -1200,7 +1213,6 @@ function vfsMain(usInp::userInputs)
         else #There was no rain, so no change in the VFS
             write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(przmIn.RUNF0[day]), "   ", likePrzm(przmIn.ESLS0[day]), "   ", likePrzm(przmIn.RFLX1[day]), "   ", likePrzm(przmIn.EFLX1[day]), "   ", likePrzm(przmIn.DCON1[day]), "   ", likePrzm(przmIn.INFL0[day])), "\n")
             #write(przmOut, join(@sprintf("%.4E3",permutedims(Vector(przmIn[day,:])))," "), "\n")
-
             #A day with no precip is a day for degradation
             inBetweenDays += 1
         end
