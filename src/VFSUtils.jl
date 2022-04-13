@@ -947,13 +947,98 @@ function readWaterQuality(scen::scenarioParameters, filter::filterParameters, fn
     return forZts
 end
 
-# This is a tool that only needs to be used once on each turf scenario
-# The scenario is used to generate initial soil moisture before each storm
-# It is not called anywhere in this code
-function writePRZMTurf(turfPath) #Do you need these?
-    # Make a safe copy - just in case?
+# This is a tool that only needs to be used once for each weather station
+# It is used to generate initial soil moisture before each storm using PRZM
+# It is not called anywhere in this code, and must be called manually from the REPL
+
+# This newer version works with either PWC 1.52 (PRZM 5.02) or PWC 2.0x (PRZM 5.08)
+# It only replaces what is necessary and doesn't require an external reference file
+function writePRZMTurf(turfPath, exePath = "")
+    # Make a copy of the PRZM input file, since the output file will have the same name
+    cp(string(turfPath, "PRZM5.inp"), string(turfPath, "PreTHETA.txt"), force=true)
+    oldInp = open(string(turfPath, "PreTHETA.txt"), "r") #Open the copy of the PRZM5.inp as the source of most of the output
+    VFSPM = open(string(turfPath, "PRZM5.inp"), "w") #Open a new PRZM5.inp that will generate the VFS Precedent Moisture from PRZM
+
+    # The first point of departure are the crop parameters
+    # PWC 1.52 only has dates, and those are 2 digit years
+    # PWC 2.0x has dpeth, cover, etc, and uses 4 digit years
+    word = ""
+    line = readline(oldInp) # First line of the old file
+    write(VFSPM, line, "\n") # Write that down
+
+    # Just copy and paste the original .inp file until the line BEFORE the number of crop periods, and go ahead and write that line
+    while word != "follow" # The last word describing the record "number of crop periods that follow"
+        line = readline(oldInp) # Next line of the old file
+        write(VFSPM, line, "\n") # Write that down
+        word = split(line, " ")[end] # get the last word
+    end
+
+    if split(line, " ")[2] == "6:"
+        PWC2 = true # In PWC 2, the record number for crop periods is 6
+    else
+        PWC2 = false
+    end
+
+    cropPeriods = parse(Int64, readline(oldInp)) # read the number of crop periods
+    write(VFSPM, string(cropPeriods), "\n") # Write to the output file
+    write(VFSPM, readline(oldInp), "\n") # Write whatever the record number and description is of the crop parameters
+
+    # grab the first year of the crop descriptors
+    firstYear = parse(Int64, split(readline(oldInp), ",")[3]) # Which is the 3rd element
+    # ignore the rest of the crop parameters in the input file
+    for i = 2:cropPeriods
+        readline(oldInp)
+    end
+
+    # What to write for the crop parameters depends on the PWC version
+    if PWC2
+        lineEnd = ",      10,      0.6,        5,      0.1,        1"
+    else
+        lineEnd = ",       1"
+    end
+
+    # Write the same crop parameters for every year
+    for i = 1:cropPeriods
+        year = firstYear - 1 + i
+        line = string(" 1, 4,", year, ",  15, 4,", year, ",   1,11,", year, lineEnd)
+        write(VFSPM, line, "\n")
+    end
+
+    line = readline(oldInp) # Next line of the old file
+
+    # Just copy and paste from the old .inp file until the last line of the file, but don't write that line
+    while word != "INFL" # The first word of the last line of the section instructing PRZM what to put in the .zts file
+        write(VFSPM, line, "\n") # Write that down
+        line = readline(oldInp) # Next line of the old file
+        word = split(line, ",")[1] # get the first word
+    end
+
+    # Tell PRZM to write THETA as the last output column
+    write(VFSPM, string("THET,0,TSER,   100,  100,    1.0"))
+
+    # Close the files
+    close(oldInp)
+    close(VFSPM)
+
+    # Run PRZM
+    if exePath == ""
+        turfPa = turfPath[1:(end-1)]
+        przm = `$turfPa\\PRZM5.exe`
+        cd(turfPath)
+    else
+        exePa = exePath[1:(end-1)]
+        przm = `$exePa\\PRZM5.exe`
+        cd(turfPath)
+    end
+    run(przm)
+end
+
+# The old version combines elements of the 50 year crop run and a pre-made turf-specific run
+# It works only with PWC 1.52's PRZM Input Files
+function writePRZMTurfOld(turfPath)
+    # Make a safe copy of the PRZM input file
     cp(string(turfPath, "PRZM5.inp"), string(turfPath,"PRZM5Crop.inp"), force = true)
-    turfIn = open(string(turfPath, "PRZM5Turf.inp"), "r")
+    turfIn = open(string(turfPath, "PRZM5Turf.inp"), "r") # a file that holds the 
     crop = open(string(turfPath,"PRZM5Crop.inp"), "r")
     turf = open(string(turfPath, "PRZM5.inp"), "w")
     for i = 1:3
@@ -998,6 +1083,7 @@ function writePRZMTurf(turfPath) #Do you need these?
     for i = 109:167
         write(turf, readline(crop), "\n")
     end
+    # The last line of the file tells PRZM to write THET0 (soil moisture) instead of INFL0 into the .zts file
     write(turf, string("THET,0,TSER,   100,  100,    1.0"))
     close(crop)
     close(turf)
