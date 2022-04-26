@@ -176,7 +176,7 @@ end
     useHPF::Bool = false
     stormLengthInHours::Int64 = 8
     exePath = ""
-    turfPath = ""
+    thetaPath = ""
     pesticideEquation::Int64 = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     Ksat::Float64 = 0.0
     shapeFlag::Int64 = 1
@@ -276,7 +276,7 @@ end
     else
         dailyWeatherFileName = string(ui.workingPath, split(readlines(scnFileName)[2], "\\")[end])
     end
-    thetaInName = string(ui.turfPath, split(readlines(scnFileName)[2], "\\")[end][1:(end-4)], "Turf.zts")
+    thetaInName = string(ui.thetaPath, split(readlines(scnFileName)[2], "\\")[end][1:(end-4)], "Theta.zts")
 
     #Create a project file for VFSMOD to read the file names too
     fileTypes = ["ikw", "iso", "igr", "isd", "irn", "iro", "iwq", "og1", "og2", "ohy", "osm", "osp", "owq"]
@@ -953,31 +953,123 @@ end
 
 # This newer version works with either PWC 1.52 (PRZM 5.02) or PWC 2.0x (PRZM 5.08)
 # It only replaces what is necessary and doesn't require an external reference file
-function writePRZMTurf(turfPath, exePath = "")
+# thetaPath is the path to the folder containing the PWC generated PRZM5.inp file run on a scenario with the weather of interprets
+# exePath is the path to the folder containing PRZM5.exe - if left blank, the copy looks in the thetaPath directory
+function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff = true)
     # Make a copy of the PRZM input file, since the output file will have the same name
-    cp(string(turfPath, "PRZM5.inp"), string(turfPath, "PreTHETA.txt"), force=true)
-    oldInp = open(string(turfPath, "PreTHETA.txt"), "r") #Open the copy of the PRZM5.inp as the source of most of the output
-    VFSPM = open(string(turfPath, "PRZM5.inp"), "w") #Open a new PRZM5.inp that will generate the VFS Precedent Moisture from PRZM
+    cp(string(thetaPath, "PRZM5.inp"), string(thetaPath, "PreTHETA.txt"), force=true)
+    oldInp = open(string(thetaPath, "PreTHETA.txt"), "r") #Open the copy of the PRZM5.inp as the source of most of the output
+    VFSPM = open(string(thetaPath, "PRZM5.inp"), "w") #Open a new PRZM5.inp that will generate the VFS Precedent Moisture from PRZM
 
-    # The first point of departure are the crop parameters
-    # PWC 1.52 only has dates, and those are 2 digit years
-    # PWC 2.0x has dpeth, cover, etc, and uses 4 digit years
+    # Need to search through the original input file, line by line, using key "words"
     word = ""
     line = readline(oldInp) # First line of the old file
     write(VFSPM, line, "\n") # Write that down
 
-    # Just copy and paste the original .inp file until the line BEFORE the number of crop periods, and go ahead and write that line
-    while word != "follow" # The last word describing the record "number of crop periods that follow"
+    # Just copy and paste the original .inp file until the Record 1
+    # Record 1 will be used to determine which version of PRZM (5.02 or 5.08) is being used
+    while word != "1:" # The second word in "***Record 1:..." when split on spaces
         line = readline(oldInp) # Next line of the old file
         write(VFSPM, line, "\n") # Write that down
-        word = split(line, " ")[end] # get the last word
+        if length(split(line, " ", keepempty=false)) > 1 # Want the second word, but only if the line has a space in it
+            word = split(line, " ", keepempty=false)[2] # get the second word
+        else
+            word = ""
+        end
     end
 
-    if split(line, " ")[2] == "6:"
-        PWC2 = true # In PWC 2, the record number for crop periods is 6
+    if split(line, " ", keepempty=false)[end] == "anetd"
+        PWC2 = true # In PWC 2, inicrp is not input in record 1, so the last word in this line is anetd
     else
         PWC2 = false
     end
+
+    # PRZM 5.02 and 5.08 input files record the crop and runoff descriptors differently
+    # In PRZM 5.02, it starts at Record 5
+    if !PWC2
+        while word != "5:"
+            line = readline(oldInp) # Next line of the old file
+            write(VFSPM, line, "\n") # Write that down
+            if length(split(line, " ", keepempty=false)) > 1 # Want the second word, but only if the line has a space in it
+                word = split(line, " ", keepempty=false)[2] # get the second word
+            else
+                word = ""
+            end
+        end
+    
+        line = "1, 0.1, 10,100, 0,   5" # Crop ID, canopyHoldup, rootDepth, canopyCover, WFMAX (optional), canopyHeight for turf
+        write(VFSPM, line, "\n") # Write that down
+        readline(oldInp) # Throw away the old crop information
+    
+        if useDefaultRunoff # Use the turf descriptors from the Turf_PA scenario
+        
+            # Write out the detailed runoff parameters from the Turf_PA scenario, all in one go
+            line = string("***Record 6", "\n", "1, 26, 0", "\n", "***Record 7", "\n", "104,1604,105,1605,106,1506,1606,107,1607,108,1608,109,1609,110,1610,111,1611,112,1612,101,1601,102,1602,103,1503,1603,", "\n", "***Record 8", "\n", ".006,.002,.007,.004,.002,.007,.005,.003,.001,.005,.003,.003,.005,.009,.013,.013,.014,.014,.015,.015,.015,.015,.015,.015,.017,.012,", "\n", "***Record 9", "\n", ".110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,.110,", "\n", "***Record 10", "\n", "74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,", "\n")
+            write(VFSPM, line, "\n") # Write that down
+            for i in 1:10
+                readline(oldInp) # Throw away the old runoff information
+            end
+        else # Only overwrite the curve number
+            # In PRZM 5.02, curve numbers are a list at Record 10
+            while line != "***Record 10"
+                line = readline(oldInp) # Next line of the old file
+                write(VFSPM, line, "\n") # Write that down
+            end
+    
+            curveNumber = string(curveNumber, ", ")
+            curveNumbers = ""
+            for i in 1:length(split(readline(oldInp), ",", keepempty=false)) # This line terminates in a comma, so -1 isn't necessary
+                curveNumbers = string(curveNumbers, curveNumber)
+            end
+            write(VFSPM, string(curveNumbers), "\n")
+        end
+
+        line = readline(oldInp) # Get the header for the next record
+    
+        # In PRZM 5.08, curve number is the last value of a line or lines in Record 5
+    else
+        while word != "changes"
+            line = readline(oldInp)
+            write(VFSPM, line, "\n") # Write that down
+            word = split(line, " ", keepempty=false)[end]
+        end
+        
+        if useDefaultRunoff # use the runoff parameters from the Turf_PA
+        
+            line = "26, 0" # Number of hydro-event changes
+            write(VFSPM, line, "\n") # Write that down
+            readline(oldInp)
+            line = readline(oldInp) # Header for the next record
+            write(VFSPM, line, "\n") # Write that down
+        
+            # The set of hydr-event changes as a string
+            line = string(" 1, 4,1972,0.006, 0.11, 74.0", "\n", "16, 4,    ,0.002, 0.11, 74.0", "\n", " 1, 5,    ,0.007, 0.11, 74.0", "\n", "16, 5,    ,0.004, 0.11, 74.0", "\n", " 1, 6,    ,0.002, 0.11, 74.0", "\n", "15, 6,    ,0.007, 0.11, 74.0", "\n", "16, 6,    ,0.005, 0.11, 74.0", "\n", " 1, 7,    ,0.003, 0.11, 74.0", "\n", "16, 7,    ,0.001, 0.11, 74.0", "\n", " 1, 8,    ,0.005, 0.11, 74.0", "\n", "16, 8,    ,0.003, 0.11, 74.0", "\n", " 1, 9,    ,0.003, 0.11, 74.0", "\n", "16, 9,    ,0.005, 0.11, 74.0", "\n", " 1,10,    ,0.009, 0.11, 74.0", "\n", "16,10,    ,0.013, 0.11, 74.0", "\n", " 1,11,    ,0.013, 0.11, 74.0", "\n", "16,11,    ,0.014, 0.11, 74.0", "\n", " 1,12,    ,0.014, 0.11, 74.0", "\n", "16,12,    ,0.015, 0.11, 74.0", "\n", " 1, 1,    ,0.015, 0.11, 74.0", "\n", "16, 1,    ,0.015, 0.11, 74.0", "\n", " 1, 2,    ,0.015, 0.11, 74.0", "\n", "16, 2,    ,0.015, 0.11, 74.0", "\n", " 1, 3,    ,0.015, 0.11, 74.0", "\n", "15, 3,    ,0.017, 0.11, 74.0", "\n", "16, 3,    ,0.012, 0.11, 74.0    ")
+            write(VFSPM, line, "\n") # Write that down
+            while word != "6:"
+                line = readline(oldInp)
+                word = split(line, " ", keepempty=false)[2]
+            end
+        else # Keep the everything but the curve number
+        
+            line = readline(oldInp) # Record 4
+            write(VFSPM, line, "\n") # Write that down
+            line = readline(oldInp) # Header for Record 5
+            write(VFSPM, line, "\n") # Write that down
+        
+            line = readline(oldInp)
+            word = split(line, " ", keepempty=false)[1]
+            while word != "***Record"
+                words = split(line, ",")
+                line = string(words[1], ",", words[2], ",", words[3], ",", words[4], ",", words[5], ",", curveNumber)
+                write(VFSPM, line, "\n") # Write that down
+                line = readline(oldInp)
+                word = split(line, " ", keepempty=false)[1]
+            end
+        end
+    end
+
+    # The number of crop periods is the next record
+    write(VFSPM, line, "\n") # Write down the record header
 
     cropPeriods = parse(Int64, readline(oldInp)) # read the number of crop periods
     write(VFSPM, string(cropPeriods), "\n") # Write to the output file
@@ -1004,7 +1096,31 @@ function writePRZMTurf(turfPath, exePath = "")
         write(VFSPM, line, "\n")
     end
 
-    line = readline(oldInp) # Next line of the old file
+    i = 0
+    # Just copy and paste from the old .inp file until the last line of the file, but don't write that line
+    while word != "Chemicals" # The first word of the last line of the section instructing PRZM what to put in the .zts file
+        line = readline(oldInp) # Next line of the old file
+        write(VFSPM, line, "\n") # Write that down
+#=         println(string("Word = ", word))
+        i += 1
+        if i > 10
+            break
+        end =#
+        word = split(line, " ")[end] # get the last word
+    end
+
+    line = PWC2 ? " 1, 1, False, 0, 0, 0, 0" : "       1       1" # Just one application and one chemical will do, but different for PRZM versions
+    write(VFSPM, line, "\n")
+    readline(oldInp) # skip the number of applications and chemicals in the old file
+
+    write(VFSPM, readline(oldInp), "\n") #Copy the ***Record C2 line
+    write(VFSPM, readline(oldInp), "\n") #Copy the first application
+
+    # Throw away the rest of the applications in the old file
+    while word != "***Record"
+        line = readline(oldInp)
+        word = split(line, " ", keepempty=false)[1]
+    end
 
     # Just copy and paste from the old .inp file until the last line of the file, but don't write that line
     while word != "INFL" # The first word of the last line of the section instructing PRZM what to put in the .zts file
@@ -1014,7 +1130,7 @@ function writePRZMTurf(turfPath, exePath = "")
     end
 
     # Tell PRZM to write THETA as the last output column
-    write(VFSPM, string("THET,0,TSER,   100,  100,    1.0"))
+    write(VFSPM, string("THET,0,TSER,   100,  100,    1.0"), "\n")
 
     # Close the files
     close(oldInp)
@@ -1022,20 +1138,20 @@ function writePRZMTurf(turfPath, exePath = "")
 
     # Run PRZM
     if exePath == ""
-        turfPa = turfPath[1:(end-1)]
+        turfPa = thetaPath[1:(end-1)]
         przm = `$turfPa\\PRZM5.exe`
-        cd(turfPath)
+        cd(thetaPath)
     else
         exePa = exePath[1:(end-1)]
         przm = `$exePa\\PRZM5.exe`
-        cd(turfPath)
+        cd(thetaPath)
     end
     run(przm)
 end
 
 # The old version combines elements of the 50 year crop run and a pre-made turf-specific run
 # It works only with PWC 1.52's PRZM Input Files
-function writePRZMTurfOld(turfPath)
+function writePRZMTurf(turfPath)
     # Make a safe copy of the PRZM input file
     cp(string(turfPath, "PRZM5.inp"), string(turfPath,"PRZM5Crop.inp"), force = true)
     turfIn = open(string(turfPath, "PRZM5Turf.inp"), "r") # a file that holds the 
@@ -1084,7 +1200,7 @@ function writePRZMTurfOld(turfPath)
         write(turf, readline(crop), "\n")
     end
     # The last line of the file tells PRZM to write THET0 (soil moisture) instead of INFL0 into the .zts file
-    write(turf, string("THET,0,TSER,   100,  100,    1.0"))
+    write(turf, string("THET,0,TSER,   100,  100,    1.0"), "\n")
     close(crop)
     close(turf)
     close(turfIn)

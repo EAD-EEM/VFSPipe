@@ -19,7 +19,7 @@ pwcName = "TestCasePWC2.0-PEI"
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\Test\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the pre-storm water content of the VFS, is found.
-turfPath = "Z:\\SharedwithVM\\VFS\\CanadianTurfZts\\" # must end in a double back-slash or slash
+thetaPath = "Z:\\SharedwithVM\\VFS\\CanadianThetaZts\\" # must end in a double back-slash or slash
 
 # The path to the standard scenarios is not required any longer - all scenario information is read from the .PWC or .SWI file
 # If a .SCN file by the name of that used for the PWC run is found in the workingPath, that is used, otherwise a version is required in scenarioPath
@@ -73,8 +73,7 @@ for width in stripWidthInM
         end
 
         # All of the user input variables collected here are passed to the other module in a single struct called a userInputs
-        #usInp = userInputs(projectName = projectName, stripWidthInM = width, twoCharacterCode = twoCharacterCode, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, turfPath = turfPath, pesticideEquation = pesticideEquation, Ksat=Ksat, shapeFlag = shapeFlag, isFirstRun = firstRun, scenarioName = scenarioName, scenarioPath = scenarioPath)
-        usInp = userInputs(stripWidthInM = width, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, turfPath = turfPath, pesticideEquation = pesticideEquation, Ksat = Ksat, shapeFlag = shapeFlag, slope = slope, isFirstRun = firstRun, isLastRun = lastrun)#, scenarioName = scenarioName, scenarioPath = scenarioPath)
+        usInp = userInputs(stripWidthInM = width, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, thetaPath = thetaPath, pesticideEquation = pesticideEquation, Ksat = Ksat, shapeFlag = shapeFlag, slope = slope, isFirstRun = firstRun, isLastRun = lastrun)#, scenarioName = scenarioName, scenarioPath = scenarioPath)
 
         #This runs VFSMOD for all runoff events, rewrites the zts file and returns the string to run VVWM
         newVVWM, oldTXT, newTXT = vfsMain(usInp)
