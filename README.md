@@ -15,7 +15,7 @@ The path to a folder containing .zts files with the initial soil moisture condit
 
 ## Theta .zts
 
-VFSMod requires the initial soil moisture of the VFS at the start of each precipitation event. The very clever people at Waterborne figured out that you can get PRZM to output this in the .zts file. Since it is chemical independent, PRZM only needs to be run one time for each meteorological data file, so these .zts files are stored in a separate folder. Should scenarios be added, there's a julia function to make this easier.
+VFSMod requires the initial soil moisture of the VFS at the start of each precipitation event, as well as the moisture content to calculate degradation between precipitation events. The very clever people at Waterborne figured out that you can get PRZM to output this in the .zts file. Since it is chemical independent, PRZM only needs to be run one time for each meteorological data file, so these .zts files are stored in a separate folder. Should scenarios be added, there's a julia function to make this easier.
 
 ## Future Improvements
 
