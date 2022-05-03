@@ -167,6 +167,7 @@ end
     ztsColumns = ["Yr","Mo","Dy","RUNF0","ESLS0","RFLX1","EFLX1","DCON1","INFL0"]
     hpfColumns = ["Date","Duration","Total","Midnight","OneAM","TwoAM","ThreeAM","FourAM","FiveAM","SixAM","SevenAM","EightAM","NineAM","TenAM","ElevenAM","Noon","OnePM","TwoPM","ThreePM","FourPM","FivePM","SixPM","SevenPM","EightPM","NinePM","TenPM","ElevenPM"]
     dvfColumns = ["Date", "Total", "A", "Temperature", "B", "C"]
+    weaColumns = ["Month","Day","Year","Total","A,","Temperature","B","C"]
     vvwmTxtColumns = ["Run", "Peak", "FourDay","TwentyOneDay","SixtyDay","NinetyDay","OneYear","PWPeak","PWTwentyOneDay"]
     vvwmCsvColumns = ["Depth","Average","PWAverage","Peak"]
 end
@@ -268,30 +269,31 @@ function writeFileNames(ui::userInputs)
     prjOutName = string(ui.workingPath, projectName, runNumber, ".prj")
 
     #scnFileName = string(ui.workingPath, readlines(swiFileName)[49], ".SCN")
-    scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN") #Use the scenario file name from the VVWMTransfer file.
-    if isfile(scnFileName)
-        # Do nothing
-    else
-        scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN2")
-        if isfile(scnFileName)
-            # Do nothing
-        else        
-            scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN")
-            if isfile(scnFileName)
-                #Do nothing
-            else
-                scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN2")
-            end
-        end
-    end
+    # No longer need anything from the .SCN or .SCN2 file
+    #scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN") #Use the scenario file name from the VVWMTransfer file.
+    #if isfile(scnFileName)
+    #    # Do nothing
+    #else
+    #    scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN2")
+    #    if isfile(scnFileName)
+    #        # Do nothing
+    #    else        
+    #        scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN")
+    #        if isfile(scnFileName)
+    #            #Do nothing
+    #        else
+    #            scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN2")
+    #        end
+    #    end
+    #end
 
-    dailyWeatherFileName = readlines(scnFileName)[2]
+    dailyWeatherFileName = readlines(swiFileName)[50]
     if isfile(dailyWeatherFileName)
         # Do nothing
     else
         dailyWeatherFileName = string(ui.workingPath, split(readlines(scnFileName)[2], "\\")[end])
     end
-    thetaInName = string(ui.thetaPath, split(readlines(scnFileName)[2], "\\")[end][1:(end-4)], "Theta.zts")
+    thetaInName = string(ui.thetaPath, split(readlines(swiFileName)[50], "\\")[end][1:(end-4)], "Theta.zts")
 
     #Create a project file for VFSMOD to read the file names too
     fileTypes = ["ikw", "iso", "igr", "isd", "irn", "iro", "iwq", "og1", "og2", "ohy", "osm", "osp", "owq"]
@@ -317,7 +319,8 @@ function writeFileNames(ui::userInputs)
     osmFileName = string(ui.workingPath, readlines(prjOutName)[11][5:end])
 
     #Place all of these in a struct so they cannot be accidentally overwritten
-    inOutNames = inOutFileNames(vfsmod = vfsmod, vvwm = vvwm, przmInName = przmInName, thetaInName = thetaInName, przmOutName = przmOutName, hpfInName = hpfInName, prjInName = prjInName, prjOutName = prjOutName, swiFileName = swiFileName, isPWCFormat = isPWCFormat, scnFileName = scnFileName, dailyWeatherFileName = dailyWeatherFileName, ikwOutName = ikwOutName, irnOutName = irnOutName, iroOutName = iroOutName, isoOutName = isoOutName, isdOutName = isdOutName, iwqOutName = iwqOutName, owqFileName = owqFileName, igrOutName = igrOutName, osmFileName = osmFileName, vvwmTransferFileName = vvwmTransferFileName)
+    # scnFileName is removed since all pertinent information is in the .SWI or .PWC file
+    inOutNames = inOutFileNames(vfsmod = vfsmod, vvwm = vvwm, przmInName = przmInName, thetaInName = thetaInName, przmOutName = przmOutName, hpfInName = hpfInName, prjInName = prjInName, prjOutName = prjOutName, swiFileName = swiFileName, isPWCFormat = isPWCFormat, dailyWeatherFileName = dailyWeatherFileName, ikwOutName = ikwOutName, irnOutName = irnOutName, iroOutName = iroOutName, isoOutName = isoOutName, isdOutName = isdOutName, iwqOutName = iwqOutName, owqFileName = owqFileName, igrOutName = igrOutName, osmFileName = osmFileName, vvwmTransferFileName = vvwmTransferFileName)
     return inOutNames
 end
 
@@ -988,8 +991,8 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff 
     # Make a copy of the PRZM input file, since the output file will have the same name
     cp(string(thetaPath, "PRZM5.inp"), string(thetaPath, "PreTHETA.txt"), force=true)
     if !isfile(string(thetaPath, "PRZM5.inp"))
-        println(string("Failed to locate file at ", thetaPath, "PRZM5.inp"))
-        return
+        error(string("Failed to locate file at ", thetaPath, "PRZM5.inp"))
+        # return
     end
     oldInp = open(string(thetaPath, "PreTHETA.txt"), "r") #Open the copy of the PRZM5.inp as the source of most of the output
     VFSPM = open(string(thetaPath, "PRZM5.inp"), "w") #Open a new PRZM5.inp that will generate the VFS Soil Moisture from PRZM
@@ -1341,8 +1344,8 @@ function vfsMain(usInp::userInputs)
     
     # Check if the expected files exist for an elegant exit with no dangling files
     if length(checkFilesExist(inOutNames, usInp)) > 0
-        println(string("Unable to find: ", checkFilesExist(inOutNames, usInp)))
-        return
+        error(string("Unable to find: ", checkFilesExist(inOutNames, usInp)))
+        # return
     end
 
     # The properties of the grass never change, but its existence is used for program control
@@ -1365,14 +1368,14 @@ function vfsMain(usInp::userInputs)
     
     # Check for the existence of the input files before trying to load them
     if !isfile(inOutNames.przmInName)
-        println("Unable to locate ", przmInName)
-        return
+        error("Unable to locate ", przmInName)
+        #return
     end
     przmIn = DataFrame(load(File(format"CSV", inOutNames.przmInName), spacedelim = true, skiplines_begin = 3, header_exists = false, colnames = cn.ztsColumns))
     
     if !isfile(inOutNames.thetaInName)
-        println(string("Unable to locate soil moisture file at ", inOutNames.thetaInName))
-        return
+        error(string("Unable to locate soil moisture file at ", inOutNames.thetaInName))
+        #return
     else
         thetaIn = open(inOutNames.thetaInName)
         cNames = split(readlines(thetaIn)[3], " ", keepempty=false)
@@ -1380,8 +1383,8 @@ function vfsMain(usInp::userInputs)
         if "THET0" in cNames
             thetaPosition = findall(x -> x == "THET0", cNames)[1]
         else
-            println("Unable to find THET0 column in the soil moisture file ",inOutFileNames.thetaInName)
-            return
+            error("Unable to find THET0 column in the soil moisture file ",inOutFileNames.thetaInName)
+            #return
         end
     end
         
@@ -1393,12 +1396,18 @@ function vfsMain(usInp::userInputs)
     else
         # Only need the daily precipitation, but want it in a dataframe with a header
         # leading to this slightly awkward work-around
-        precipIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false, colnames = cn.dvfColumns))
-        precipIn = precipIn[!, [:Total]]
+        if inOutNames.dailyWeatherFileName[end-2:end] == "wea"
+            weatherIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = false, header_exists = false, colnames = cn.weaColumns))
+        else
+            weatherIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false, colnames = cn.dvfColumns))
+        end
+        precipIn = weatherIn[!, [:Total]]
         stormLength = usInp.stormLengthInHours*constants().secondsInAnHour
     end
 
-    airTempIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false))[!,4]
+    airTempIn = weatherIn[!,:Temperature]
+    # Free up the memory
+    weatherIn = []
     #Need the scenario information to be avaialable to several functions
     scenario = readScenarioParameters(inOutNames, usInp)
     chem = readChemicalParameters(inOutNames.swiFileName)
@@ -1484,7 +1493,7 @@ function vfsMain(usInp::userInputs)
             
             #Run VFSMOD
             run(inOutNames.vfsmod)
-            println(string("Simulation: ",day))
+            println(string("Simulated Day: ",day))
             vfsOut = readWaterQuality(scenario, filterStrip, inOutNames)
             write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
 

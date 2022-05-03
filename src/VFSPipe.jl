@@ -19,7 +19,7 @@ pwcName = "TestCasePWC2.0-PEI"
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\Test\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the water content of the VFS soil, is found.
-thetaPath = "Z:\\SharedwithVM\\VFS\\CanadianThetaZts\\" # must end in a double back-slash or slash
+thetaPath = "Z:\\SharedwithVM\\VFS\\Phase Three\\Test Case\\Theta\\" # must end in a double back-slash or slash
 
 # The path to the standard scenarios is not required any longer - all scenario information is read from the .PWC or .SWI file
 # If a .SCN file by the name of that used for the PWC run is found in the workingPath, that is used, otherwise a version is required in scenarioPath
@@ -58,8 +58,7 @@ slopesInPercent = [-9999]
 # Unique names allow multiple, consecutive simulations in the same folder
 if !isfile(string(workingPath, "vvwmTransfer.txt"))
     #scenarioName = readlines(string(workingPath, "vvwmTransfer.txt"))[29]
-    println("VFSPipe has already been run on these PWC results. Please re-run PWC and try again.")
-    return
+    error("VFSPipe has already been run on these PWC results. Please re-run PWC and try again.")
 end
 
 firstRun = true
