@@ -5,7 +5,8 @@
 
 using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots, StaticArrays #Gtk removed
 
-#constants
+# THIS SHOULD BE REPLACED BY IMPLEMENTING THE "UNITS" PACKAGE
+#constants, just to avoid magic numbers
 @with_kw struct constants @deftype Int64
     cmInAMeter = 100
     secondsInAnHour = 3600
@@ -160,6 +161,7 @@ end
     owqFileName = ""
     osmFileName = ""
 end
+
 # A container for all of the column headers
 @with_kw struct columnNames @deftype Array{String}
     ztsColumns = ["Yr","Mo","Dy","RUNF0","ESLS0","RFLX1","EFLX1","DCON1","INFL0"]
@@ -206,6 +208,8 @@ function writeFileNames(ui::userInputs)
     #     error("Project name must be <= 6 characters")
     # end
     projectName = "VFSM"
+    
+    # Append a run number to allow running more than one instance in the same directory simultaneously
     runNumber = 0
     while isfile(string(ui.workingPath, projectName, runNumber, ".igr"))
         runNumber += 1
@@ -213,19 +217,29 @@ function writeFileNames(ui::userInputs)
 
     executeString = string(projectName, runNumber, ".prj")
     exePath = ui.exePath[1:end-1] #To make the path 'command friedly'
-    vfsmod = `$exePath\\vfsm.exe $executeString 0` #The zero prevents the textual output to the REPL
+    vfsmod = `$exePath\\vfsm.exe $executeString 0` #The zero prevents the textual output from VFSMOD to the REPL
 
-    swiFileName = string(ui.workingPath, ui.pwcName, ".SWI")
-    if isfile(swiFileName)
-        # Do nothing
+    # set the PWC file name from the user input
+    # if the user has not specified the file extension, try appending .SWI or .PWC
+    if isfile(string(ui.workingPath, ui.pwcName))
+        swiFileName = string(ui.workingPath, ui.pwcName)
     else
-        swiFileName = string(ui.workingPath, ui.pwcName, ".PWC")
+        swiFileName = string(ui.workingPath, ui.pwcName, ".SWI")
+        if !isfile(swiFileName)
+            swiFileName = string(ui.workingPath, ui.pwcName, ".PWC")
+        end
+        if !isfile(swiFileName)
+            error("Unable to find a .SWI or .PWC file with the name ", ui.pwcName)
+        end
     end
 
-    swi = open(swiFileName, "r")
-
-    # The PWC format is slightly different than the SWI format
+    # The PWC2 format is slightly different than the PWC1.52 format
     # Check the end of the first line of the file for the model version number
+    if isfile(swiFileName)
+        swi = open(swiFileName, "r")
+    else
+        error(string("Unable to find ", swiFileName))
+    end
     isPWCFormat = parse(Float64, split(readline(swi))[end]) >= 2
     close(swi)
 
@@ -236,11 +250,12 @@ function writeFileNames(ui::userInputs)
         rm(string(ui.workingPath, "vvwmTransfer.txt"))
     end
     
-if isPWCFormat
     vvwm = `$exePath\\VVWM.exe $vvwmTransferFileName`
-else
-    vvwm = `$exePath\\VVWM-forPWC1.52.exe $vvwmTransferFileName`
-end
+    
+    # For debugging convenience
+    #if !isPWC2Format
+    #    vvwm = `$exePath\\VVWM-forPWC1.52.exe $vvwmTransferFileName`
+    #end
 
     przmInName = string(ui.workingPath, projectName, "_before.zts")
     #przmInName = string(workingPath, projectName, "NM.zts")
@@ -306,11 +321,26 @@ end
     return inOutNames
 end
 
+function checkFilesExist(fns::inOutFileNames, ui::userInputs)
+    missingFiles = []
+    if !ui.useHPF
+        inNames = [fns.przmInName, fns.thetaInName, fns.swiFileName, fns.dailyWeatherFileName]
+    else
+        inNames = [fns.przmInName, fns.thetaInName, fns.hpfInName, fns.swiFileName, fns.dailyWeatherFileName]
+    end
+    for fn in inNames
+        if !isfile(fn)
+            push!(missingFiles, fn)
+        end
+    end
+    return missingFiles
+end
+
 # This function writes the .irn file required by VFSMOD
 # There are two versions: one which interprets daily precipitation files (for all Canadian scenarios) and one which interprets hourly precipitation files
 #This takes a vector of HOURLY rain intensities and writes out an irn file of durations and intensities
 #This version trims zeroes off both ends to reduce run time of VFSMOD
-function writePrecipitation(row::DataFrame,fns::inOutFileNames)
+function writePrecipitation(row::DataFrame, fns::inOutFileNames)
     #Containers
     times = Vector{Int16}()
     rates = Vector{Float32}()
@@ -318,25 +348,25 @@ function writePrecipitation(row::DataFrame,fns::inOutFileNames)
     row = vec(permutedims(Vector(row)))
     #Remove any zeroes from the beginning
     while row[1] == 0
-        deleteat!(row,1)
+        deleteat!(row, 1)
     end
     #Remove any zeroes from the end
     while row[end] == 0
-        deleteat!(row,length(row))
+        deleteat!(row, length(row))
     end
 
     #Do not want reduduncancy, but easier to write them all and remove than to control what to write
     for i in 1:length(row)
-        t = (i-1)*constants().secondsInAnHour # We want the hour, not the index
-        times = [times;t]
-        r = row[i]/constants().cmInAMeter/constants().secondsInAnHour #HPF is in cm/h, irn is in m/s
-        rates = [rates;r]
+        t = (i - 1) * constants().secondsInAnHour # We want the hour, not the index
+        times = [times; t]
+        r = row[i] / constants().cmInAMeter / constants().secondsInAnHour #HPF is in cm/h, irn is in m/s
+        rates = [rates; r]
     end
     i = 1 #length(times)
     while length(times[i:end]) > 2
         if rates[i] == rates[i+1] #&& rates[i] == rates[i+2]
-            deleteat!(times, i+1)
-            deleteat!(rates, i+1)
+            deleteat!(times, i + 1)
+            deleteat!(rates, i + 1)
         else
             i += 1
         end
@@ -348,30 +378,31 @@ function writePrecipitation(row::DataFrame,fns::inOutFileNames)
 
     #According to the UFSMOD manual, it is generally it is not raining at the end of the simulation
     #The example pipe appears to end the simulation with a two-hour rain-less period
-    if maximum(times) < (constants().hoursInADay-2)*constants().secondsInAnHour
-        times = [times; (maximum(times)+1)] #one second after the last non-zero
-        rates = [rates;0]
-        times = [times;((maximum(times)-1)+2*constants().secondsInAnHour)] #two hours after the last non-zero
-        rates = [rates;0]
+    if maximum(times) < (constants().hoursInADay - 2) * constants().secondsInAnHour
+        times = [times; (maximum(times) + 1)] #one second after the last non-zero
+        rates = [rates; 0]
+        times = [times; ((maximum(times) - 1) + 2 * constants().secondsInAnHour)] #two hours after the last non-zero
+        rates = [rates; 0]
     end
 
     # create the struct before altering the vectors for text output
     rain = zeros(Float64, 200, 2)
-    rain[1:length(times),1:2] = hcat([times],[rates])
-    storm = rainInput(nrain = numberOfDataInAFakeStorm, rpeak = secondlyRate, rain = rain)
+    rain[1:length(times), 1:2] = hcat([times], [rates])
+    storm = rainInput(nrain=numberOfDataInAFakeStorm, rpeak=secondlyRate, rain=rain)
 
     #VFSMOD expects a description of the data at the top of the data
     pushfirst!(times, length(times))
     pushfirst!(rates, maximum(rates))
     irn = open(fns.irnOutName, "w")
     for j in 1:length(times)
-        write(irn, string(@sprintf("%9s",times[j]), "  ", @sprintf("%.4E",rates[j])), "\n")
+        write(irn, string(@sprintf("%9s", times[j]), "  ", @sprintf("%.4E", rates[j])), "\n")
         #write(irn, string(" ", @sprintf("%08u",times[j]), "  ", @sprintf("%.4E",rates[j])), "\n")
     end
     close(irn)
     return stormTime, storm
 end
 # This version takes a daily rain amount and generates a stormTime seconds long storm from it
+# It has been updated to reflect the 2022 guidance from the VFS Working Group
 # The hyetograph is rectangular
 function writePrecipitation(precip::Float64, stormTime::Int64, fns::inOutFileNames)
 
@@ -538,7 +569,7 @@ function readScenarioParameters(scnFileName, usInp::userInputs)
 
     return scenStruct
 end
-
+# this populates the scenarioParameters struct from the information in the .SWI or .PWC file
 function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
     swi = open(fns.swiFileName, "r")
     
@@ -835,16 +866,14 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
         end
     end
 
-while owqWord != "IMOB=1)" && owqWord != "days)" #scoot to right line, different by VFSMOD version
-    owqLine = readline(owq)
-    if length(split(owqLine)) > 0
-        owqWord = split(owqLine)[end]
+    while owqWord != "IMOB=1)" && owqWord != "days)" #scoot to right line, different by VFSMOD version
+        owqLine = readline(owq)
+        if length(split(owqLine)) > 0
+            owqWord = split(owqLine)[end]
+        end
     end
-end
 
-mixingLayerResidue = parse(Float64, split(owqLine)[1]) # in mg/m2
-
-
+    mixingLayerResidue = parse(Float64, split(owqLine)[1]) # in mg/m2
 
     close(owq)
 
@@ -958,8 +987,12 @@ end
 function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff = true)
     # Make a copy of the PRZM input file, since the output file will have the same name
     cp(string(thetaPath, "PRZM5.inp"), string(thetaPath, "PreTHETA.txt"), force=true)
+    if !isfile(string(thetaPath, "PRZM5.inp"))
+        println(string("Failed to locate file at ", thetaPath, "PRZM5.inp"))
+        return
+    end
     oldInp = open(string(thetaPath, "PreTHETA.txt"), "r") #Open the copy of the PRZM5.inp as the source of most of the output
-    VFSPM = open(string(thetaPath, "PRZM5.inp"), "w") #Open a new PRZM5.inp that will generate the VFS Precedent Moisture from PRZM
+    VFSPM = open(string(thetaPath, "PRZM5.inp"), "w") #Open a new PRZM5.inp that will generate the VFS Soil Moisture from PRZM
 
     # Need to search through the original input file, line by line, using key "words"
     word = ""
@@ -1101,11 +1134,6 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff 
     while word != "Chemicals" # The first word of the last line of the section instructing PRZM what to put in the .zts file
         line = readline(oldInp) # Next line of the old file
         write(VFSPM, line, "\n") # Write that down
-#=         println(string("Word = ", word))
-        i += 1
-        if i > 10
-            break
-        end =#
         word = split(line, " ")[end] # get the last word
     end
 
@@ -1123,9 +1151,25 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff 
     end
 
     # Just copy and paste from the old .inp file until the last line of the file, but don't write that line
-    while word != "INFL" # The first word of the last line of the section instructing PRZM what to put in the .zts file
+    #while word != "INFL" # The first word of the last line of the section instructing PRZM what to put in the .zts file
+    #    write(VFSPM, line, "\n") # Write that down
+    #    line = readline(oldInp) # Next line of the old file
+    #    word = split(line, ",")[1] # get the first word
+    #end
+
+    # Copy and paste until record U1, the number of lines of instructions for the output
+    while word != "U1"
+        line = readline(oldInp)
         write(VFSPM, line, "\n") # Write that down
+        word = split(line, " ", keepempty=false)[end]
+    end
+    outputLines = parse(Int64, readline(oldInp))
+    write(VFSPM, string(outputLines + 1), "\n") # Adding an extra line of output
+
+    # copy to the end of the old file
+    while word != "INFL" # The first word of the last line of the section instructing PRZM what to put in the .zts file
         line = readline(oldInp) # Next line of the old file
+        write(VFSPM, line, "\n") # Write that down
         word = split(line, ",")[1] # get the first word
     end
 
@@ -1183,13 +1227,13 @@ function writePRZMTurf(turfPath)
         write(turf, readline(crop), "\n")
     end
     horizons = trunc(Int64, readfirst(crop)) #91
-    #println(horizons)
+
     write(turf, string(horizons), "\n") #91
     for i = 92:(99+horizons)
         write(turf, readline(crop), "\n")
     end
     applicatations = trunc(Int64, readfirstSpace(crop)) #100 + horizons
-    #println(applicatations)
+
     write(turf,string("     1     1"), "\n" ) #100 + horizons
     write(turf, readline(crop), "\n") #101 + horizons
     write(turf, readline(crop), "\n") #102 + horizons
@@ -1289,12 +1333,17 @@ end
 function vfsMain(usInp::userInputs)
     # Julia, or Juno, needs to have the working directory set
     # It also requires a drive change separate from the rest of the path
-    #cd("Z:")
     cd(usInp.workingPath[1:2])
     cd(string(usInp.workingPath[3:end]))
 
     # All of the rest of the input and output file names can be generated programmatically
     inOutNames = writeFileNames(usInp)
+    
+    # Check if the expected files exist for an elegant exit with no dangling files
+    if length(checkFilesExist(inOutNames, usInp)) > 0
+        println(string("Unable to find: ", checkFilesExist(inOutNames, usInp)))
+        return
+    end
 
     # The properties of the grass never change, but its existence is used for program control
     writeGrass(inOutNames.igrOutName)
@@ -1313,8 +1362,31 @@ function vfsMain(usInp::userInputs)
     #Dataframes are easier with named columns
     cn = columnNames()
     #CSV.jl doesn't handle space delimited files well, so using CSVFiles
+    
+    # Check for the existence of the input files before trying to load them
+    if !isfile(inOutNames.przmInName)
+        println("Unable to locate ", przmInName)
+        return
+    end
     przmIn = DataFrame(load(File(format"CSV", inOutNames.przmInName), spacedelim = true, skiplines_begin = 3, header_exists = false, colnames = cn.ztsColumns))
-    thetaIn = DataFrame(load(File(format"CSV", inOutNames.thetaInName), spacedelim = true, skiplines_begin = 3, header_exists = false))[!,9]
+    
+    if !isfile(inOutNames.thetaInName)
+        println(string("Unable to locate soil moisture file at ", inOutNames.thetaInName))
+        return
+    else
+        thetaIn = open(inOutNames.thetaInName)
+        cNames = split(readlines(thetaIn)[3], " ", keepempty=false)
+        close(thetaIn)
+        if "THET0" in cNames
+            thetaPosition = findall(x -> x == "THET0", cNames)[1]
+        else
+            println("Unable to find THET0 column in the soil moisture file ",inOutFileNames.thetaInName)
+            return
+        end
+    end
+        
+    thetaIn = DataFrame(load(File(format"CSV", inOutNames.thetaInName), spacedelim = true, skiplines_begin = 3, header_exists = false))[!,thetaPosition]
+
     #The Hourly Precipitation File (HPF), if being used
     if usInp.useHPF
         precipIn = DataFrame(load(File(format"CSV", inOutNames.hpfInName), spacedelim = true, header_exists = false, colnames = cn.hpfColumns))
@@ -1327,7 +1399,7 @@ function vfsMain(usInp::userInputs)
     end
 
     airTempIn = DataFrame(load(File(format"CSV", inOutNames.dailyWeatherFileName), spacedelim = true, header_exists = false))[!,4]
-    #Need the scenario information to be avaialable to several methods
+    #Need the scenario information to be avaialable to several functions
     scenario = readScenarioParameters(inOutNames, usInp)
     chem = readChemicalParameters(inOutNames.swiFileName)
 
@@ -1398,24 +1470,28 @@ function vfsMain(usInp::userInputs)
             iro = writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames)
 
             #write the soil file
-            writeSoil(thetaIn[(day)], scenario, inOutNames) #Want the
+            if day > 1
+                writeSoil(thetaIn[(day - 1)], scenario, inOutNames) #Want the water content from the day before
+            else
+                writeSoil(thetaIn[(day)], scenario, inOutNames) #The water content from the first day will have to do
+            end
 
             #And the sediment file
             writeSediment(przmIn.RUNF0[day], przmIn.ESLS0[day], scenario, inOutNames)
 
             #And finally, the water quality
             writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, water, airTempIn, day, inOutNames)
-            #Write a line to the new zts file
-            #write(przmOut, "Hey...you should have run VFSMOD!", "\n")
+            
+            #Run VFSMOD
             run(inOutNames.vfsmod)
             println(string("Simulation: ",day))
             vfsOut = readWaterQuality(scenario, filterStrip, inOutNames)
             write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
 
-        else #There was no rain, so no change in the VFS
+        else #There was no runoff, so no change in the .zts file
             write(przmOut, string(yr, " ", mo, " " , dy, "         ", likePrzm(przmIn.RUNF0[day]), "   ", likePrzm(przmIn.ESLS0[day]), "   ", likePrzm(przmIn.RFLX1[day]), "   ", likePrzm(przmIn.EFLX1[day]), "   ", likePrzm(przmIn.DCON1[day]), "   ", likePrzm(przmIn.INFL0[day])), "\n")
-            #write(przmOut, join(@sprintf("%.4E3",permutedims(Vector(przmIn[day,:])))," "), "\n")
-            #A day with no precip is a day for degradation
+
+            #A day with no runoff is a day for degradation
             inBetweenDays += 1
         end
     end
@@ -1426,6 +1502,6 @@ function vfsMain(usInp::userInputs)
     end
     # Writes the new VVWM Transfer File, and returns file names for plotting
     oldCSV,newCSV,oldTXT,newTXT = writeVVWMTransfer(inOutNames, filterStrip, usInp)
-    #run(inOutNames.vvwm)
+
     return inOutNames.vvwm, oldTXT, newTXT
 end

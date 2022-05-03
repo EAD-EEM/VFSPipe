@@ -18,7 +18,7 @@ pwcName = "TestCasePWC2.0-PEI"
 # Executables folder must contain vfsm.exe and vvwm.exe, as well as SoilTriangle.csv
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\Test\\" # must end in a double back-slash or slash
 
-# The location of the pre-run .zts files where θ, the pre-storm water content of the VFS, is found.
+# The location of the pre-run .zts files where θ, the water content of the VFS soil, is found.
 thetaPath = "Z:\\SharedwithVM\\VFS\\CanadianThetaZts\\" # must end in a double back-slash or slash
 
 # The path to the standard scenarios is not required any longer - all scenario information is read from the .PWC or .SWI file
