@@ -8,3 +8,4 @@ yesVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Ca
 noVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\TestCase-PEI_Potato-PEI_Custom_Parent.txt")
 turfPath = "Z:\\SharedWithVM\\VFS\\CanadianTurfZts\\"
 exePath = "Z:\\SharedWithVM\\VFS\\Executables\\"
+thetaPath = "Z:\\SharedWithVM\\VFS\\CanadianThetaZts\\"
