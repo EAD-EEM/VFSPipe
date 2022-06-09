@@ -37,7 +37,7 @@ end
     IKD::Int8 = 1 #1=KOC used
     KOCD::R = 100.0 #
     DGGHALF::R = 30.0 #Halflife, not K
-    DGML::R = 0.05 #dispersion length of chemical, meters, default from 2022 guidance
+    dgLD::R = 0.05 #dispersion length of chemical, meters, default from 2022 guidance
 end
 
 #These are the parameters required by the water quality file, and are NOT sourced from other structs
@@ -46,7 +46,7 @@ end
     IQPRO::Int8 = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen
     IDG::Int8 = 2 #2=degradation by decay rate only
     dgML::R = 2.0 #Surface mixing layer thickness = constant
-    IMOB::R = 1.0 # Portion of the residue available for carryover the the next runoff event
+    IMOB::Int8 = 1 # Portion of the residue available for carryover the the next runoff event
 end
 
 # matches VFSMOD parameter names
@@ -59,7 +59,7 @@ end
 
 # A blend of PWC and VFSMOD values
 @with_kw struct scenarioParameters{R<:Real}
-    # All of these 'defaults' are overwritten by values from the scenario (.SCN), or calculated from information in the scenario
+    # All of these 'defaults' are overwritten by values from the .SWI or .PWC file, or calculated from information in that file
 
     #For a few calculations
     fieldAreaInHa::R = 10.0 #in ha
@@ -166,6 +166,7 @@ end
     iwqOutName = ""
     owqFileName = ""
     osmFileName = ""
+    resultsOutName = ""
 end
 
 # A container for all of the column headers
@@ -178,6 +179,7 @@ end
     weaColumns = ["Month", "Day", "Year", "Total", "A,", "Temperature", "B", "C"]
     vvwmTxtColumns = ["Run", "Peak", "FourDay", "TwentyOneDay", "SixtyDay", "NinetyDay", "OneYear", "PWPeak", "PWTwentyOneDay"]
     vvwmCsvColumns = ["Depth", "Average", "PWAverage", "Peak"]
+    resultsColumns = ["Year,Month,Day,Precipitation,Temperature,PRZMRunoff,PRZMErosion,PRZMDissolvedPesticide,PRZMSolidPesticide,VFSMRunoff,VFSMErosion,VFSMDissolvedPesticide,VFSMSolidPesticide,PRZMVVWMWater,VFSMVVWMWater"]
 end
 # A container for all the things that the user can change easily
 @with_kw struct userInputs
@@ -197,6 +199,7 @@ end
     isLastRun::Bool = false
     scenarioName = ""
     scenarioPath = ""
+    remobilizationFlag::Int8 = 2 # Recommended value - only remobilize dissolved pesticide in equilibrium with soil moisture
 end
 
 # Generate the table of soil classes here, so it doesn't have to be read in from some external file
@@ -277,6 +280,7 @@ function writeFileNames(ui::userInputs)
     #przmInName = string(workingPath, projectName, "NM.zts")
     cp(string(ui.workingPath, ui.pwcName, ".zts"), przmInName, force=true)
     przmOutName = string(ui.workingPath, ui.stripWidthInM, "m_", projectName, ".zts")
+    resultsOutName = string(ui.workingPath, projectName, "Results.txt")
     #For now, since we don't really need an HPF - could create from dvf or met right here
     #In future, should explore real hourly with the 'new' met data
     hpfInName = string(ui.workingPath, projectName, ".HPF")
@@ -335,7 +339,7 @@ function writeFileNames(ui::userInputs)
 
     #Place all of these in a struct so they cannot be accidentally overwritten
     # scnFileName is removed since all pertinent information is in the .SWI or .PWC file
-    inOutNames = inOutFileNames(vfsmod=vfsmod, vvwm=vvwm, przmInName=przmInName, thetaInName=thetaInName, przmOutName=przmOutName, hpfInName=hpfInName, prjInName=prjInName, prjOutName=prjOutName, swiFileName=swiFileName, isPWCFormat=isPWCFormat, dailyWeatherFileName=dailyWeatherFileName, ikwOutName=ikwOutName, irnOutName=irnOutName, iroOutName=iroOutName, isoOutName=isoOutName, isdOutName=isdOutName, iwqOutName=iwqOutName, owqFileName=owqFileName, igrOutName=igrOutName, osmFileName=osmFileName, vvwmTransferFileName=vvwmTransferFileName)
+    inOutNames = inOutFileNames(vfsmod=vfsmod, vvwm=vvwm, przmInName=przmInName, thetaInName=thetaInName, przmOutName=przmOutName, hpfInName=hpfInName, prjInName=prjInName, prjOutName=prjOutName, swiFileName=swiFileName, isPWCFormat=isPWCFormat, dailyWeatherFileName=dailyWeatherFileName, ikwOutName=ikwOutName, irnOutName=irnOutName, iroOutName=iroOutName, isoOutName=isoOutName, isdOutName=isdOutName, iwqOutName=iwqOutName, owqFileName=owqFileName, igrOutName=igrOutName, osmFileName=osmFileName, vvwmTransferFileName=vvwmTransferFileName, resultsOutName = resultsOutName)
     return inOutNames
 end
 
@@ -479,7 +483,7 @@ function writeRunoff(RUNF0, scen::scenarioParameters, filter::filterParameters, 
     runOn = RUNF0 / constants().cmInAMeter * fieldAreaInMSq / eventLength
     BCROPEAK = 2 * runOn
     #Containers
-    times = Vector{Int16}()
+    times = Vector{Int64}()
     rates = Vector{Float32}()
 
     #write the times and the rate for the event
@@ -865,7 +869,7 @@ function readChemicalParameters(fn)#, chemStruct::chemicalParameters)
         readline(swi)
     end
     KOCorKD = readline(swi) #4
-    IKD = KOCorKD == "True" ? 1 : 2 # NEED TO VERIFY KD is 2, not 0 **********************************************************************
+    IKD = KOCorKD == "True" ? 1 : 0 # NEED TO VERIFY KD is 2, not 0 **********************************************************************
     KOCD = readfirst(swi) # 5 This line is a csv string of all KOCs or KDs, for parent, daughter, granddaughter
     for i = 6:12
         readline(swi) #Throw away seven more lines
@@ -890,29 +894,56 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
     owqLine = ""
     owqWord = ""
 
-    while owqWord != "area:" #scoot to right area (to the normalized data),
-        #because there are two lines that end in "(mresn, IMOD=1)"
-        owqLine = readline(owq)
-        if length(split(owqLine)) > 0
-            owqWord = split(owqLine)[end]
+    # Need to know the version of VFSMOD to know where to look for the data
+    owqLine = readline(owq)
+    if length(split(owqLine, " ", keepempty=false)) > 1 # Can't address an array past its length
+        owqWord = split(owqLine, " ", keepempty=false)[end-1]
+    
+        isVFSMOD45 = owqWord == "v4.5.0"
+    
+        if isVFSMOD45
+            while owqWord != "Normalized" #Scoot down to the Normalized data
+                owqLine = readline(owq)
+                if length(split(owqLine, " ", keepempty=false)) > 0 # Can't address an array past its length
+                    owqWord = split(owqLine, " ", keepempty=false)[1]
+                end
+            end
+            while owqWord != "remobilization"
+                owqLine = readline(owq)
+                if length(split(owqLine, " ", keepempty=false)) > 4 # Can't address an array past its length
+                    owqWord = split(owqLine, " ", keepempty=false)[end-2]
+                end
+            end
+            # For model version 4.5, using dgMRES, not adding in the mass
+            dgMRES0 = parse(Float64, split(owqLine, " ", keepempty=false)[1]) # in mg/m2
+            mobilizableResidueInMg = 0.0
+        else
+            while owqWord != "remobilization" # scoot to right section
+                owqLine = readline(owq)
+                if length(split(owqLine, " ", keepempty=false)) > 2
+                    owqWord = split(owqLine, " ", keepempty=false)[3]
+                end
+            end
+            # Skip down 4 lines
+            for i in 1:4
+                readline(owq)
+            end
+            owqLine = readline(owq)
         end
+        # VFSMOD version 4.4.3, so add the mass in the filter to the incoming
+        mobilizableResidueInMg = parse(Float64, split(owqLine, " ", keepempty=false)[1]) # in mg
+        dgMRES0 = 0.0
+    else
+        # VFSMOD hasn't been run yet, so can't tell which version, and there's no residue
+        mobilizableResidueInMg = 0.0
+        dgMRES0 = 0.0
     end
-
-    while owqWord != "IMOB=1)" && owqWord != "days)" #scoot to right line, different by VFSMOD version
-        owqLine = readline(owq)
-        if length(split(owqLine)) > 0
-            owqWord = split(owqLine)[end]
-        end
-    end
-
-    mixingLayerResidue = parse(Float64, split(owqLine)[1]) # in mg/m2
-
     close(owq)
 
     massInLiquidInMg = RFLX1 * scen.fieldAreaInHa * constants().mSqInAHa * constants().cmSqInAMSq * constants().mgInAGram #starts as g/cm2/day
     massInSolidInMg = EFLX1 * scen.fieldAreaInHa * constants().mSqInAHa * constants().cmSqInAMSq * constants().mgInAGram #starts in g/cm2/day
-    totalMassInMg = sum([massInLiquidInMg, massInSolidInMg])
-    dgPin = totalMassInMg / (scen.fieldAreaInHa * constants().mSqInAHa)
+    totalMassInMg = sum([massInLiquidInMg, massInSolidInMg, mobilizableResidueInMg])
+    dgPin = totalMassInMg / (scen.fieldAreaInHa * constants().mSqInAHa) #mg/m2
 
     #In one scenario, it doesn't rain for 503 days, but VFSMOD will only let stuff degrade for 366 days
     if inBetweenDays > 365
@@ -927,16 +958,21 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
     write(iwq, string(" ", chem.IKD, " ", chem.KOCD, " ", scen.OCP,), "\n")
     write(iwq, string(" ", scen.CCP), "\n")
     write(iwq, string(" ", water.IDG), "\n")
-    write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML, " ", chem.DGML, " ", mixingLayerResidue), "\n")
+
+    write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML, " ", chem.dgLD , " ", dgMRES0), "\n")
+    #write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML), "\n")
+
     for i in 1:length(airTemps)
         write(iwq, string(" ", airTemps[i]))
     end
-    write(iwq, "\n")
+    write(iwq, " \n")
     for i in 1:length(θs)
         write(iwq, string(" ", θs[i]))
     end
-    write(iwq, "\n")
+    write(iwq, " \n")
+
     write(iwq, string(" ", water.IMOB), "\n")
+
     close(iwq)
 end
 
@@ -1383,6 +1419,8 @@ function vfsMain(usInp::userInputs)
     # Faster to write a dummy owq file than to test if it's the first run through the main loop every time
     writeDummyOWQFile(inOutNames.owqFileName)
 
+    #Dataframes are easier with named columns
+    cn = columnNames()
     #Need a place to put the new .zts info
     przmOut = open(inOutNames.przmOutName, "w")
     #It contains the same header information. These lines are not conducive to a DataFrame, so just copy them as-is
@@ -1390,11 +1428,14 @@ function vfsMain(usInp::userInputs)
         write(przmOut, readlines(inOutNames.przmInName)[i], "\n")
     end
 
-    #First, need the input data
-    #Dataframes are easier with named columns
-    cn = columnNames()
+    # A single file for all results
+    resultsOut = open(inOutNames.resultsOutName, "w")
+    # Give it a header
+    write(resultsOut, cn.resultsColumns[1], "\n")
+
     #CSV.jl doesn't handle space delimited files well, so using CSVFiles
 
+    #First, need the input data
     # Check for the existence of the input files before trying to load them
     if !isfile(inOutNames.przmInName)
         error("Unable to locate ", przmInName)
@@ -1430,7 +1471,7 @@ function vfsMain(usInp::userInputs)
         else
             # Need to know how many columns the dvf file has, since it's not the same between PMRA and EPA
             dvfile = open(inOutNames.dailyWeatherFileName)
-            dvfColumnCount = length(split(readline(dvfile), " ", keepempty = false))
+            dvfColumnCount = length(split(readline(dvfile), " ", keepempty=false))
             close(dvfile)
             if dvfColumnCount < 10
                 weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=true, header_exists=false, colnames=cn.dvfColumns))
@@ -1453,7 +1494,7 @@ function vfsMain(usInp::userInputs)
     filterStrip = writeFilterStrip(usInp.stripWidthInM, scenario, usInp.shapeFlag, "VFSM", inOutNames.ikwOutName)
 
     # Some parameters of the water do not change, and are assigned their own struct
-    water = waterQualityParameters(IQPRO=usInp.pesticideEquation)
+    water = waterQualityParameters(IQPRO=usInp.pesticideEquation, IMOB=usInp.remobilizationFlag)
 
     #An index for keeping track of days bewtween simulations, to account for degradation
     inBetweenDays = 1
@@ -1509,11 +1550,12 @@ function vfsMain(usInp::userInputs)
             #Next, the runoff from the field
             # 2022 Guidance indicates that runoff from rain gives an 8 hour hydrograph, but runoff from snowmelt should give a 12 hour hydrograph
             if precipIn.Total[day] > 0
-                eventTime = stormLength
+                eventTime = stormLength # Storm length is already in seconds
             else
-                eventTime = 12
+                eventTime = 12 * constants().secondsInAnHour # Convert 12 hours to seconds
             end
-            iro = writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames)
+            #iro = writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames) # iro isn't called anywhere, is it?
+            writeRunoff(przmIn.RUNF0[day], scenario, filterStrip, eventTime, inOutNames)
 
             #write the soil file
             if day > 1
@@ -1532,16 +1574,35 @@ function vfsMain(usInp::userInputs)
             run(inOutNames.vfsmod)
             println(string("Simulated Day: ", day))
             vfsOut = readWaterQuality(scenario, filterStrip, inOutNames)
-            write(przmOut, string(yr, " ", mo, " ", dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
 
+            # Although VVWM probably doesn't read the dates - PRZM calls them 'dummy fields'
+            # It's nice to keep the data and the format "just in case"
+            yr = string(Int64(przmIn.Yr[day]))
+            mo = Int8(przmIn.Mo[day])
+            if mo < 10
+                mo = string(" ", string(mo))
+            else
+                mo = string(mo)
+
+            end
+            dy = Int8(przmIn.Dy[day])
+            if dy < 10
+                dy = string(" ", string(dy))
+            else
+                dy = string(dy)
+            end
+
+            write(przmOut, string(yr, " ", mo, " ", dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
+            write(resultsOut, string(yr, ",", mo, ",", dy, ",", precipIn.Total[day], ",", airTempIn[day], ",", likePrzm(przmIn.RUNF0[day]), ",", likePrzm(przmIn.ESLS0[day]), ",", likePrzm(przmIn.RFLX1[day]), ",", likePrzm(przmIn.EFLX1[day]), ",", likePrzm(vfsOut.RUNF0), ",", likePrzm(vfsOut.ESLS0), ",", likePrzm(vfsOut.RFLX1), ",", likePrzm(vfsOut.EFLX1), ",", "NA,NA"), "\n")
         else #There was no runoff, so no change in the .zts file
             write(przmOut, string(yr, " ", mo, " ", dy, "         ", likePrzm(przmIn.RUNF0[day]), "   ", likePrzm(przmIn.ESLS0[day]), "   ", likePrzm(przmIn.RFLX1[day]), "   ", likePrzm(przmIn.EFLX1[day]), "   ", likePrzm(przmIn.DCON1[day]), "   ", likePrzm(przmIn.INFL0[day])), "\n")
-
+            write(resultsOut, string(yr, ",", mo, ",", dy, ",", precipIn.Total[day], ",", airTempIn[day], ",", likePrzm(przmIn.RUNF0[day]), ",", likePrzm(przmIn.ESLS0[day]), ",", likePrzm(przmIn.RFLX1[day]), ",", likePrzm(przmIn.EFLX1[day]), ",", likePrzm(przmIn.RUNF0[day]), ",", likePrzm(przmIn.ESLS0[day]), ",", likePrzm(przmIn.RFLX1[day]), ",", likePrzm(przmIn.EFLX1[day]), ",NA,NA"), "\n")
             #A day with no runoff is a day for degradation
             inBetweenDays += 1
         end
     end
     close(przmOut)
+    close(resultsOut)
 
     if usInp.isLastRun
         rm(inOutNames.igrOutName)
