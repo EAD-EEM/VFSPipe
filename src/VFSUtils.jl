@@ -1350,7 +1350,7 @@ function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters, 
     end
     teeExTee = split(readline(vvwmIn), "\\")[end] #72
     oldTXT = string(workingPath, teeExTee)
-    newTXT = string(workingPath, Int64(usInp.stripWidthInM), "m_VFS_", teeExTee)
+    newTXT = string(workingPath, usInp.stripWidthInM, "m_VFS_", teeExTee)
     write(vvwmOut, string("\"", newTXT), "\n") #72
     for i = 73:83 #length(vvwm)
         write(vvwmOut, string("\"", workingPath, "VFS_", split(readline(vvwmIn), "\\")[end]), "\n")
