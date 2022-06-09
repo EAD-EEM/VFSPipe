@@ -5,13 +5,13 @@ include("./VFSUtils.jl")
 #include("C:\\Users\\hcuser\\github\\PRZMTools.jl\\src\\PRZMTools.jl")
 
 #User choice - an array of widths in meters
-stripWidthInM = [10.0]
+stripWidthInM = [9.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
 # NOTE: If an .SCN file using the filename specified in the PWC run is located in workingPath, it will supersede any in the folder specified by scenarioPath
-workingPath = "Z:\\SharedwithVM\\VFS\\Phase Three\\Test Case\\" # must end in a double back-slash or slash
+workingPath = "Z:\\SharedwithVM\\VFS\\VFSPipe Demo\\" # must end in a double back-slash or slash
 # Name of the .SWI or .PWC file
-pwcName = "TestCasePWC2.0-AB"
+pwcName = "GAOnion"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
@@ -19,7 +19,7 @@ pwcName = "TestCasePWC2.0-AB"
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\PWC2VFSMOD45\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the water content of the VFS soil, is found.
-thetaPath = "Z:\\SharedwithVM\\VFS\\CanadianThetaZts\\" # must end in a double back-slash or slash
+thetaPath = "Z:\\SharedwithVM\\VFS\\VFSPipe Demo\\" # must end in a double back-slash or slash
 
 # The path to the standard scenarios is not required any longer - all scenario information is read from the .PWC or .SWI file
 

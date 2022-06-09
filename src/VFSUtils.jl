@@ -1050,7 +1050,7 @@ end
 
 # This newer version works with either PWC 1.52 (PRZM 5.02) or PWC 2.0x (PRZM 5.08)
 # It only replaces what is necessary and doesn't require an external reference file
-# thetaPath is the path to the folder containing the PWC generated PRZM5.inp file run on a scenario with the weather of interprets
+# thetaPath is the path to the folder containing the PWC generated PRZM5.inp file run on a scenario with the weather of interest
 # exePath is the path to the folder containing PRZM5.exe - if left blank, the copy looks in the thetaPath directory
 function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=true)
     # Make a copy of the PRZM input file, since the output file will have the same name
@@ -1066,6 +1066,27 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=
     word = ""
     line = readline(oldInp) # First line of the old file
     write(VFSPM, line, "\n") # Write that down
+
+    # Just copy and paste the original .inp file until the Record A1
+    while word != "A1:" # The second word in "***Record A1:..." when split on spaces
+        line = readline(oldInp) # Next line of the old file
+        write(VFSPM, line, "\n") # Write that down
+        if length(split(line, " ", keepempty=false)) > 1 # Want the second word, but only if the line has a space in it
+            word = split(line, " ", keepempty=false)[2] # get the second word
+        else
+            word = ""
+        end
+    end
+    line = readline(oldInp) # Next line of the old file
+    write(VFSPM, line, "\n") # Write that down
+
+    weatherName = split(line, "\\", keepempty=false)[end][1:end-4] #get the name of the weather file
+
+    line = readline(oldInp) # Next line of the old file
+    write(VFSPM, line, "\n") # Write that down
+    line = readline(oldInp) # Next line of the old file
+    write(VFSPM, line, "\n") # Write that down
+    ztsName = split(line, "\\", keepempty=false)[end] #get the name of the .zts file
 
     # Just copy and paste the original .inp file until the Record 1
     # Record 1 will be used to determine which version of PRZM (5.02 or 5.08) is being used
@@ -1259,6 +1280,8 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=
         cd(thetaPath)
     end
     run(przm)
+    cp(string(thetaPath, ztsName), string(thetaPath, weatherName, "Theta.zts"))
+    rm(string(thetaPath,ztsName))
 end
 
 # The old version combines elements of the 50 year crop run and a pre-made turf-specific run
@@ -1343,7 +1366,7 @@ function writeVVWMTransfer(fileNames::inOutFileNames, filter::filterParameters, 
     end
     seeEssVee = split(readline(vvwmIn), "\\")[end] #69, dude!
     oldCSV = string(workingPath, seeEssVee)
-    newCSV = string(workingPath, Int64(usInp.stripWidthInM), "m_VFS_", seeEssVee)
+    newCSV = string(workingPath, usInp.stripWidthInM, "m_VFS_", seeEssVee)
     write(vvwmOut, string("\"", newCSV), "\n") #69, dude!
     for i = 70:71
         write(vvwmOut, string("\"", workingPath, "VFS_", split(readline(vvwmIn), "\\")[end]), "\n")
