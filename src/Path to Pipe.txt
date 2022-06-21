@@ -1,6 +1,7 @@
 This is just a convenient scratchpad
 
 include("C:\\Users\\hcuser\\github\\VFSPipe\\src\\VFSPipe.jl")
+include("C:\\Users\\hcuser\\github\\VFSPipe\\src\\VFSUtils.jl")
 "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\10m_VFS_TestCasePWC2.0-PEI_Potato-PEI_Custom_Parent.txt"
 yesVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\10m_VFS_TestCasePWC2.0-PEI_Potato-PEI_Custom_Parent.txt")
 noVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Case\\TestCasePWC2.0-PEI_Potato-PEI_Custom_Parent.txt")
@@ -9,4 +10,4 @@ noVFS = getVVWMText(columnNames(), "Z:\\SharedWithVM\\VFS\\Phase Three\\Test Cas
 turfPath = "Z:\\SharedWithVM\\VFS\\CanadianTurfZts\\"
 exePath = "Z:\\SharedWithVM\\VFS\\Executables\\PWC2VFSMOD45\\"
 thetaPath = "Z:\\SharedWithVM\\VFS\\CanadianThetaZts\\"
-writePRZMTheta("Z:\\SharedWithVM\\VFS\\VFSPipe Demo", "Z:\\SharedWithVM\\VFS\\Executables\\PWC2VFSMOD45\\")
+writePRZMTheta("Z:\\SharedWithVM\\VFS Connector Demo\\", "Z:\\SharedWithVM\\VFS\\Executables\\PWC2VFSMOD45\\")

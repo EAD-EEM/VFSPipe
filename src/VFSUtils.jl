@@ -52,9 +52,10 @@ end
 # matches VFSMOD parameter names
 @with_kw struct sedimentParameters{R<:Real}
     #Using the variable names from VFSMOD
-    NPART::Int8 = 7 # 7 = read user input values
+    NPART::Int8 = 8 # 7 = read user input values, 8 = calculated internally (8 Recommended)
     CI::R = 0.0 #This is the only value that changes from run to run
     SG::R = 2.65 #This is the density of quartz
+    ITILLAGE::Int8 = 0 # 0 (default) for conventional tillage, 1 for no tillage
 end
 
 # A blend of PWC and VFSMOD values
@@ -81,6 +82,7 @@ end
     ρSed::R = 2.65 # Density of sediment particles
     # Slope needed for filterParameters
     SOA::R = 0.0200 # As a fraction
+    SILT_FRAC::R = 0.33 # Required by VFSMOD 4.5
 end
 
 # matches PRZM parameter names
@@ -556,7 +558,8 @@ function readScenarioParameters(scnFileName, usInp::userInputs)
     clayPercent = readfirst(scn) #59
     close(scn)
     POR = 1 - (ρ / constants().ρQuartz)
-    texture = getSoilClass(sandPercent, (100 - sum([sandPercent, clayPercent])), clayPercent)
+    siltPercent = (100 - sum([sandPercent, clayPercent]))
+    texture = getSoilClass(sandPercent, siltPercent, clayPercent)
     #This derivation probably highlights a logical flaw in determining the bulk density of sediments
     #In PWC scenario development rather than providing a better value for sediment bulk density
     #It shall be left here but not used in the writing of the sediment input file for now
@@ -597,7 +600,7 @@ function readScenarioParameters(scnFileName, usInp::userInputs)
     else
         #Do Nothing: keep the user's input Ksat
     end
-    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope)
+    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope, SILT_FRAC = siltPercent/100)
 
     return scenStruct
 end
@@ -775,8 +778,11 @@ function writeSediment(RUNF0, ESLS0, scen, fns)
     sediment = sedimentParameters(CI=CI)
     isd = open(fns.isdOutName, "w")
     write(isd, string("   ", sediment.NPART, "  ", @sprintf("%.4f", scen.COARSE), "  ", @sprintf("%.10f", sediment.CI), "  ", @sprintf("%.4f", scen.POR)), "\n")
+    # For VFSMOD v4.5 the final line is the silt fraction and the type of tillage
+    write(isd, string("   ", @sprintf("%.3f", scen.SILT_FRAC), "  ", sediment.ITILLAGE))
     #Note that this currently writes sediment.SG (just the density of silicon) rather than scen.ρSediment
-    write(isd, string("   ", @sprintf("%.4f", scen.DP), "  ", @sprintf("%.4f", scen.ρSed)))
+    #write(isd, string("   ", @sprintf("%.4f", scen.DP), "  ", @sprintf("%.4f", scen.ρSed)))
+
     close(isd)
 end
 
@@ -814,7 +820,7 @@ function writeFilterStrip(width::Float64, scen::scenarioParameters, shapeFlag::I
 
     #Any values are rounded to the nearest odd number
     #Even integers are always increased
-    nodes = floor(nodes / 2) * 2 + 1
+    nodes = Int64(floor(nodes / 2) * 2 + 1)
 
     if shapeFlag == 1 # a square field with a rectangular pond and VFS
         # The length of the strip is just the square root of the field area - the hydraulic lentgh of the field is ignored
@@ -1594,10 +1600,11 @@ function vfsMain(usInp::userInputs)
             writeWaterQualityParameters(inBetweenDays, przmIn.RFLX1[day], przmIn.EFLX1[day], thetaIn, chem, scenario, water, airTempIn, day, inOutNames)
 
             #Run VFSMOD
+            println("Running VFSMOD for day: ", day)
             run(inOutNames.vfsmod)
-            println(string("Simulated Day: ", day))
+            println(string("VFSMOD run completed for Day: ", day))
             vfsOut = readWaterQuality(scenario, filterStrip, inOutNames)
-
+            
             # Although VVWM probably doesn't read the dates - PRZM calls them 'dummy fields'
             # It's nice to keep the data and the format "just in case"
             yr = string(Int64(przmIn.Yr[day]))
