@@ -5,13 +5,13 @@ include("./VFSUtils.jl")
 #include("C:\\Users\\hcuser\\github\\PRZMTools.jl\\src\\PRZMTools.jl")
 
 #User choice - an array of widths in meters
-stripWidthInM = [9.5]
+stripWidthInM = [1.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
 # NOTE: If an .SCN file using the filename specified in the PWC run is located in workingPath, it will supersede any in the folder specified by scenarioPath
 workingPath = "Z:\\SharedwithVM\\VFS Connector Demo\\" # must end in a double back-slash or slash
 # Name of the .SWI or .PWC file
-pwcName = "Generic Pesticide"
+pwcName = "Generic PesticideSandy"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
@@ -45,6 +45,8 @@ shapeFlag = 1 # 1 for default, 2 for round, 3 for square, 4 for rectangular with
 
 # Slope - an array of any positive or zero values in percent 
 # Any negative value to read slope from PWC scenario
+
+
 slopesInPercent = [-9999]
 
 
