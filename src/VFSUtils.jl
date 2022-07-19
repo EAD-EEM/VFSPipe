@@ -22,6 +22,7 @@ using CSVFiles, DataFrames, PrettyTables, Printf, CSV, Parameters, Plots, Static
     cent = 100 #As in percent
     kgInATonne = 1000
     cmSqInAMSq = 10000
+    gInAKg = 1000
 end
 
 # matches VFSMOD parameter names
@@ -95,6 +96,27 @@ end
     DCON1 = 0.0 # g per sqcm per day - mass of degradate 1 by runoff
     INFL0 = 0.0 # g per sqcm per day - mass of degradate 1 by erosion
 end
+
+# a struct to hold edge-of-field before-and-after data
+@with_kw struct edgeOfField
+    @deftype Float64
+    runoffInM3 = 0.0 #M3
+    sedimentInG = 0.0 #g
+    #dissolvedPesticideIn = 0.0
+    #sorbedPesticideIn = 0.0
+    pesticideIn = 0.0 #mg
+    runoffOutM3 = 0.0 #M3
+    sedimentOutG = 0.0 #g
+    dissolvedPesticideOut = 0.0 #mg
+    sorbedPesticideOut = 0.0 #mg
+    pesticideOut = 0.0 #mg
+    runoffReductionPercent = 0.0
+    sedimentReductionPercent = 0.0
+    #dissolvedRemovalEfficiency = 0.0
+    #sorbedRemovalEfficiency = 0.0
+    pesticideReductionPercent = 0.0
+end
+
 # matches VFSMOD parameter names
 @with_kw struct filterParameters
     @deftype Float64
@@ -181,7 +203,8 @@ end
     weaColumns = ["Month", "Day", "Year", "Total", "A,", "Temperature", "B", "C"]
     vvwmTxtColumns = ["Run", "Peak", "FourDay", "TwentyOneDay", "SixtyDay", "NinetyDay", "OneYear", "PWPeak", "PWTwentyOneDay"]
     vvwmCsvColumns = ["Depth", "Average", "PWAverage", "Peak"]
-    resultsColumns = ["Year,Month,Day,Precipitation,Temperature,PRZMRunoff,PRZMErosion,PRZMDissolvedPesticide,PRZMSolidPesticide,VFSMRunoff,VFSMErosion,VFSMDissolvedPesticide,VFSMSolidPesticide,PRZMVVWMWater,VFSMVVWMWater"]
+    #resultsColumns = ["Year,Month,Day,Precipitation,Temperature,PRZMRunoff,PRZMErosion,PRZMDissolvedPesticide,PRZMSolidPesticide,VFSMRunoff,VFSMErosion,VFSMDissolvedPesticide,VFSMSolidPesticide,PRZMVVWMWater,VFSMVVWMWater"]
+    resultsColumns = ["Date,Precipitation(mm),Temperature(C),RunoffIn(m3),SedimentIn(g),RunoffOut(m3),SedimentOut(g),RunoffReduction(%),SedimentReductionReduction(%),PesticideReduction(%),TotalPesticideIn(mg),TotalPesticideOut(mg),DissolvedPesticideOut(mg),SorbedPesticdeOut(mg)"]
 end
 # A container for all the things that the user can change easily
 @with_kw struct userInputs
@@ -215,7 +238,11 @@ end
 #decimal, 4 digits right of the decimal, and three digits in the exponent
 #It turns out that this doesn't matter, but it looks 'right'
 function likePrzm(num)
-    return string(@sprintf("%.4E", num)[1:8], @sprintf("%03d", parse(Int64, @sprintf("%.4E", num)[9:10])))
+    if length(@sprintf("%.4E", num)) > 3
+        return string(@sprintf("%.4E", num)[1:8], @sprintf("%03d", parse(Int64, @sprintf("%.4E", num)[9:10])))
+    else
+        return num
+    end
 end
 
 #This function generates all of the filenames used by VVWM and VFSMOD
@@ -282,7 +309,7 @@ function writeFileNames(ui::userInputs)
     #przmInName = string(workingPath, projectName, "NM.zts")
     cp(string(ui.workingPath, ui.pwcName, ".zts"), przmInName, force=true)
     przmOutName = string(ui.workingPath, ui.stripWidthInM, "m_", projectName, ".zts")
-    resultsOutName = string(ui.workingPath, projectName, "Results.txt")
+    resultsOutName = string(ui.workingPath, ui.stripWidthInM, "m_", projectName, "Results.txt")
     #For now, since we don't really need an HPF - could create from dvf or met right here
     #In future, should explore real hourly with the 'new' met data
     hpfInName = string(ui.workingPath, projectName, ".HPF")
@@ -341,7 +368,7 @@ function writeFileNames(ui::userInputs)
 
     #Place all of these in a struct so they cannot be accidentally overwritten
     # scnFileName is removed since all pertinent information is in the .SWI or .PWC file
-    inOutNames = inOutFileNames(vfsmod=vfsmod, vvwm=vvwm, przmInName=przmInName, thetaInName=thetaInName, przmOutName=przmOutName, hpfInName=hpfInName, prjInName=prjInName, prjOutName=prjOutName, swiFileName=swiFileName, isPWCFormat=isPWCFormat, dailyWeatherFileName=dailyWeatherFileName, ikwOutName=ikwOutName, irnOutName=irnOutName, iroOutName=iroOutName, isoOutName=isoOutName, isdOutName=isdOutName, iwqOutName=iwqOutName, owqFileName=owqFileName, igrOutName=igrOutName, osmFileName=osmFileName, vvwmTransferFileName=vvwmTransferFileName, resultsOutName = resultsOutName)
+    inOutNames = inOutFileNames(vfsmod=vfsmod, vvwm=vvwm, przmInName=przmInName, thetaInName=thetaInName, przmOutName=przmOutName, hpfInName=hpfInName, prjInName=prjInName, prjOutName=prjOutName, swiFileName=swiFileName, isPWCFormat=isPWCFormat, dailyWeatherFileName=dailyWeatherFileName, ikwOutName=ikwOutName, irnOutName=irnOutName, iroOutName=iroOutName, isoOutName=isoOutName, isdOutName=isdOutName, iwqOutName=iwqOutName, owqFileName=owqFileName, igrOutName=igrOutName, osmFileName=osmFileName, vvwmTransferFileName=vvwmTransferFileName, resultsOutName=resultsOutName)
     return inOutNames
 end
 
@@ -600,7 +627,8 @@ function readScenarioParameters(scnFileName, usInp::userInputs)
     else
         #Do Nothing: keep the user's input Ksat
     end
-    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope, SILT_FRAC = siltPercent/100)
+    
+    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope, SILT_FRAC=siltPercent / 100)
 
     return scenStruct
 end
@@ -685,6 +713,7 @@ function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
 
     POR = 1 - (ρ / constants().ρQuartz)
     texture = getSoilClass(sandPercent, (100 - sum([sandPercent, clayPercent])), clayPercent)
+
     #This derivation probably highlights a logical flaw in determining the bulk density of sediments
     #In PWC scenario development rather than providing a better value for sediment bulk density
     #It shall be left here but not used in the writing of the sediment input file for now
@@ -725,6 +754,11 @@ function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
     else
         #Do Nothing: keep the user's input Ksat
     end
+
+    if VKS < 1E-20
+        error("The sautrated hydraulic conductivity is zero. There will be no infiltration in the VFS. Check that the PWC scenario includes sand and clay percents.")
+    end
+
     scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope)
 
     return scenStruct
@@ -904,9 +938,9 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
     owqLine = readline(owq)
     if length(split(owqLine, " ", keepempty=false)) > 1 # Can't address an array past its length
         owqWord = split(owqLine, " ", keepempty=false)[end-1]
-    
+
         isVFSMOD45 = owqWord == "v4.5.0"
-    
+
         if isVFSMOD45
             while owqWord != "Normalized" #Scoot down to the Normalized data
                 owqLine = readline(owq)
@@ -965,7 +999,7 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
     write(iwq, string(" ", scen.CCP), "\n")
     write(iwq, string(" ", water.IDG), "\n")
 
-    write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML, " ", chem.dgLD , " ", dgMRES0), "\n")
+    write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML, " ", chem.dgLD, " ", dgMRES0), "\n")
     #write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML), "\n")
 
     for i in 1:length(airTemps)
@@ -1016,38 +1050,65 @@ function readWaterQuality(scen::scenarioParameters, filter::filterParameters, fn
         readline(osm) #throw away 5 lines
     end
 
-    runoffInM3 = parse(Float64, split(readline(osm))[5])
+    runoffOutM3 = parse(Float64, split(readline(osm))[5])
     for i in 1:11
         readline(osm) #throw away 11 lines
     end
 
-    sedimentInG = parse(Float64, split(readline(osm))[6])
+    sedimentOutG = parse(Float64, split(readline(osm))[6])
     owqLine = ""
     owqWord = ""
 
-    # Ignore the entire file until the first line that ends in (mop)
-    while owqWord != "(mop)"
+    #=     # Ignore the entire file until the first line that ends in (mop)
+        while owqWord != "(mop)"
+            owqLine = readline(owq)
+            if length(split(owqLine)) > 0
+                owqWord = split(owqLine)[end]
+            end
+        end =#
+    while owqWord != "Outputs"
         owqLine = readline(owq)
         if length(split(owqLine)) > 0
-            owqWord = split(owqLine)[end]
+            owqWord = split(owqLine)[1]
         end
     end
 
-    # That line has the pesticide mass on the solids leaving the strip
-    pesticideSolidInmg = parse(Float64, split(owqLine)[1])
-    # The next line has the pesticide mass in the dissolved phase leaving the strip
-    pesticideWaterInmg = parse(Float64, split(readline(owq))[1])
+    readline(owq) # Throw away a blank line
+    runoffInM3 = parse(Float64, split(readline(owq))[1])
+    sedimentInG = parse(Float64, split(readline(owq))[1]) * constants().gInAKg
 
-    water = runoffInM3 * constants().cmInAMeter / filter.areaInMSq # now in cm/day
-    solids = sedimentInG / constants().gInATonne # now in tonnes/day
-    pesticideInWater = pesticideWaterInmg / constants().mgInAGram / (filter.areaInHa * constants().mSqInAHa * constants().cmSqInAMSq) #now in g/cm2/day
-    pesticideInSolids = pesticideSolidInmg / constants().mgInAGram / (filter.areaInHa * constants().mSqInAHa * constants().cmSqInAMSq) #now in g/cm2/day
+    for i in 1:2
+        readline(owq) #throw away 2 lines
+    end
+
+    sedimentReductionPercent = parse(Float64, split(readline(owq))[1])
+    runoffReductionPercent = parse(Float64, split(readline(owq))[1])
+    readline(owq) # Throw away a blank line
+    pesticideReductionPercent = parse(Float64, split(readline(owq))[1])
+
+    for i in 1:3
+        readline(owq) #throw away 3 lines
+    end
+
+    pesticideIn = parse(Float64, split(readline(owq))[1])
+    pesticideOut = parse(Float64, split(readline(owq))[1])
+
+    # The next line has the pesticide mass on the solids leaving the strip
+    pesticideSolidOutmg = parse(Float64, split(readline(owq))[1])
+    # The next line has the pesticide mass in the dissolved phase leaving the strip
+    pesticideWaterOutmg = parse(Float64, split(readline(owq))[1])
+
+    water = runoffOutM3 * constants().cmInAMeter / filter.areaInMSq # now in cm/day
+    solids = sedimentOutG / constants().gInATonne # now in tonnes/day
+    pesticideOutWater = pesticideWaterOutmg / constants().mgInAGram / (filter.areaInHa * constants().mSqInAHa * constants().cmSqInAMSq) #now in g/cm2/day
+    pesticideOutSolids = pesticideSolidOutmg / constants().mgInAGram / (filter.areaInHa * constants().mSqInAHa * constants().cmSqInAMSq) #now in g/cm2/day
 
     close(osm)
     close(owq)
     # Write to a struct
-    forZts = waterQualityOutput(RUNF0=water, ESLS0=solids, RFLX1=pesticideInWater, EFLX1=pesticideInSolids)
-    return forZts
+    forZts = waterQualityOutput(RUNF0=water, ESLS0=solids, RFLX1=pesticideOutWater, EFLX1=pesticideOutSolids)
+    edge = edgeOfField(runoffInM3=runoffInM3, sedimentInG=sedimentInG, runoffOutM3=runoffOutM3, sedimentOutG=sedimentOutG, runoffReductionPercent=runoffReductionPercent, sedimentReductionPercent=sedimentReductionPercent, pesticideReductionPercent=pesticideReductionPercent, pesticideIn=pesticideIn, pesticideOut=pesticideOut, dissolvedPesticideOut=pesticideWaterOutmg, sorbedPesticideOut=pesticideSolidOutmg)
+    return forZts, edge
 end
 
 # This is a tool that only needs to be used once for each weather station
@@ -1287,68 +1348,9 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=
     end
     run(przm)
     cp(string(thetaPath, ztsName), string(thetaPath, weatherName, "Theta.zts"))
-    rm(string(thetaPath,ztsName))
-end
-
-# The old version combines elements of the 50 year crop run and a pre-made turf-specific run
-# It works only with PWC 1.52's PRZM Input Files
-function writePRZMTurf(turfPath)
-    # Make a safe copy of the PRZM input file
-    cp(string(turfPath, "PRZM5.inp"), string(turfPath, "PRZM5Crop.inp"), force=true)
-    turfIn = open(string(turfPath, "PRZM5Turf.inp"), "r") # a file that holds the 
-    crop = open(string(turfPath, "PRZM5Crop.inp"), "r")
-    turf = open(string(turfPath, "PRZM5.inp"), "w")
-    for i = 1:3
-        write(turf, readline(crop), "\n")
-        readline(turfIn)
-    end
-    line = readline(crop) #4
-    readline(turfIn)
-    #write(turf, string("Z:", line[26:end]),"\n") #4
-    write(turf, line, "\n") #4
-    write(turf, readline(crop), "\n") #5
-    readline(turfIn)
-    line = readline(crop) #6
-    readline(turfIn)
-    #write(turf, string("Z:", line[26:end]),"\n") #6
-    write(turf, line, "\n") #6
-    for i = 7:16
-        write(turf, readline(crop), "\n")
-        readline(turfIn)
-    end
-    for i = 17:81
-        write(turf, readline(turfIn), "\n")
-        readline(crop)
-    end
-    for i = 82:90
-        write(turf, readline(crop), "\n")
-    end
-    horizons = trunc(Int64, readfirst(crop)) #91
-
-    write(turf, string(horizons), "\n") #91
-    for i = 92:(99+horizons)
-        write(turf, readline(crop), "\n")
-    end
-    applicatations = trunc(Int64, readfirstSpace(crop)) #100 + horizons
-
-    write(turf, string("     1     1"), "\n") #100 + horizons
-    write(turf, readline(crop), "\n") #101 + horizons
-    write(turf, readline(crop), "\n") #102 + horizons
-    for i = 1:(applicatations-1)
-        readline(crop) #just throwing these out
-    end
-    for i = 109:167
-        write(turf, readline(crop), "\n")
-    end
-    # The last line of the file tells PRZM to write THET0 (soil moisture) instead of INFL0 into the .zts file
-    write(turf, string("THET,0,TSER,   100,  100,    1.0"), "\n")
-    close(crop)
-    close(turf)
-    close(turfIn)
-    turfPa = turfPath[1:(end-1)]
-    przm = `$turfPa\\PRZM5.exe`
-    cd(turfPath)
-    run(przm)
+    rm(string(thetaPath, ztsName))
+    # Replace the original PRZM5.inp file - is this necessary? Not really
+    cp(string(thetaPath, "PreTHETA.txt"), string(thetaPath, "PRZM5.inp"), force=true)
 end
 
 # This writes a new VVWMTransfer file by copying lines from the old one and inserting those that have changed
@@ -1603,8 +1605,10 @@ function vfsMain(usInp::userInputs)
             println("Running VFSMOD for day: ", day)
             run(inOutNames.vfsmod)
             println(string("VFSMOD run completed for Day: ", day))
-            vfsOut = readWaterQuality(scenario, filterStrip, inOutNames)
-            
+
+            # Read the results from the VFMOD run
+            vfsOut, edgeOfField = readWaterQuality(scenario, filterStrip, inOutNames)
+
             # Although VVWM probably doesn't read the dates - PRZM calls them 'dummy fields'
             # It's nice to keep the data and the format "just in case"
             yr = string(Int64(przmIn.Yr[day]))
@@ -1623,10 +1627,10 @@ function vfsMain(usInp::userInputs)
             end
 
             write(przmOut, string(yr, " ", mo, " ", dy, "         ", likePrzm(vfsOut.RUNF0), "   ", likePrzm(vfsOut.ESLS0), "   ", likePrzm(vfsOut.RFLX1), "   ", likePrzm(vfsOut.EFLX1), "   ", likePrzm(vfsOut.DCON1), "   ", likePrzm(vfsOut.INFL0)), "\n")
-            write(resultsOut, string(yr, ",", mo, ",", dy, ",", precipIn.Total[day], ",", airTempIn[day], ",", likePrzm(przmIn.RUNF0[day]), ",", likePrzm(przmIn.ESLS0[day]), ",", likePrzm(przmIn.RFLX1[day]), ",", likePrzm(przmIn.EFLX1[day]), ",", likePrzm(vfsOut.RUNF0), ",", likePrzm(vfsOut.ESLS0), ",", likePrzm(vfsOut.RFLX1), ",", likePrzm(vfsOut.EFLX1), ",", "NA,NA"), "\n")
+
+            write(resultsOut, string(yr, "-", mo, "-", dy, ",", precipIn.Total[day], ",", airTempIn[day], ",", edgeOfField.runoffInM3, ",", edgeOfField.sedimentInG, ",", edgeOfField.runoffOutM3, ",", edgeOfField.sedimentOutG, ",", edgeOfField.runoffReductionPercent, ",", edgeOfField.sedimentReductionPercent, ",", edgeOfField.pesticideReductionPercent, ",", edgeOfField.pesticideIn, ",", edgeOfField.pesticideOut, ",", edgeOfField.dissolvedPesticideOut, ",", edgeOfField.sorbedPesticideOut), "\n")
         else #There was no runoff, so no change in the .zts file
             write(przmOut, string(yr, " ", mo, " ", dy, "         ", likePrzm(przmIn.RUNF0[day]), "   ", likePrzm(przmIn.ESLS0[day]), "   ", likePrzm(przmIn.RFLX1[day]), "   ", likePrzm(przmIn.EFLX1[day]), "   ", likePrzm(przmIn.DCON1[day]), "   ", likePrzm(przmIn.INFL0[day])), "\n")
-            write(resultsOut, string(yr, ",", mo, ",", dy, ",", precipIn.Total[day], ",", airTempIn[day], ",", likePrzm(przmIn.RUNF0[day]), ",", likePrzm(przmIn.ESLS0[day]), ",", likePrzm(przmIn.RFLX1[day]), ",", likePrzm(przmIn.EFLX1[day]), ",", likePrzm(przmIn.RUNF0[day]), ",", likePrzm(przmIn.ESLS0[day]), ",", likePrzm(przmIn.RFLX1[day]), ",", likePrzm(przmIn.EFLX1[day]), ",NA,NA"), "\n")
             #A day with no runoff is a day for degradation
             inBetweenDays += 1
         end
