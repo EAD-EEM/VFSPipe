@@ -2,24 +2,25 @@
 # for each individual runoff event, and compiles the results into
 # another .zts file upon which VVWM is run
 include("./VFSUtils.jl")
-#include("C:\\Users\\hcuser\\github\\PRZMTools.jl\\src\\PRZMTools.jl")
 
 #User choice - an array of widths in meters
 stripWidthInM = [1.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
 # NOTE: If an .SCN file using the filename specified in the PWC run is located in workingPath, it will supersede any in the folder specified by scenarioPath
-workingPath = "Z:\\SharedwithVM\\VFS Connector Demo\\" # must end in a double back-slash or slash
+workingPath = "Z:\\SharedwithVM\\VFS Automatic Theta\\" # must end in a double back-slash or slash
 # Name of the .SWI or .PWC file
-pwcName = "Generic PesticideSandy"
+pwcName = "Generic Pesticide"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
-# Executables folder must contain vfsm.exe and vvwm.exe, as well as SoilTriangle.csv
+# Executables folder must contain PRZM5.exe, vfsm.exe and vvwm.exe
 exePath = "Z:\\SharedwithVM\\VFS\\executables\\PWC2VFSMOD45\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the water content of the VFS soil, is found.
-thetaPath = "Z:\\SharedwithVM\\VFS Connector Demo\\" # must end in a double back-slash or slash
+# If blank (just "") a new .zts with the appropriate θ data will be created
+# thetaPath = "Z:\\SharedwithVM\\VFS Connector Demo\\" # must end in a double back-slash or slash
+thetaPath = ""
 
 # The path to the standard scenarios is not required any longer - all scenario information is read from the .PWC or .SWI file
 
@@ -72,7 +73,7 @@ for width in stripWidthInM
         end
 
         # All of the user input variables collected here are passed to the other module in a single struct called a userInputs
-        usInp = userInputs(stripWidthInM = width, workingPath = workingPath, pwcName = pwcName, useHPF = useHPF, stormLengthInHours = stormLengthInHours, exePath = exePath, thetaPath = thetaPath, pesticideEquation = pesticideEquation, Ksat = Ksat, shapeFlag = shapeFlag, slope = slope, isFirstRun = firstRun, isLastRun = lastrun, remobilizationFlag = remobilizationFlag)#, scenarioName = scenarioName, scenarioPath = scenarioPath)
+        usInp = userInputs(stripWidthInM=width, workingPath=workingPath, pwcName=pwcName, useHPF=useHPF, stormLengthInHours=stormLengthInHours, exePath=exePath, thetaPath=thetaPath, pesticideEquation=pesticideEquation, Ksat=Ksat, shapeFlag=shapeFlag, slope=slope, isFirstRun=firstRun, isLastRun=lastrun, remobilizationFlag=remobilizationFlag)#, scenarioName = scenarioName, scenarioPath = scenarioPath)
 
         #This runs VFSMOD for all runoff events, rewrites the zts file and returns the string to run VVWM
         newVVWM, oldTXT, newTXT = vfsMain(usInp)

@@ -1336,6 +1336,8 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=
     close(oldInp)
     close(VFSPM)
 
+    # Make a copy of the .zts file from the original run
+    cp(string(thetaPath, ztsName), string(thetaPath, "Original.zts"), force = true)
     # Run PRZM
     if exePath == ""
         turfPa = thetaPath[1:(end-1)]
@@ -1347,10 +1349,15 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=
         cd(thetaPath)
     end
     run(przm)
-    cp(string(thetaPath, ztsName), string(thetaPath, weatherName, "Theta.zts"))
-    rm(string(thetaPath, ztsName))
-    # Replace the original PRZM5.inp file - is this necessary? Not really
+    # Rename that output
+    cp(string(thetaPath, ztsName), string(thetaPath, weatherName, "Theta.zts"), force = true)
+    # Replace the original .zts file
+    cp(string(thetaPath, "Original.zts"), string(thetaPath, ztsName), force = true)
+    # And remove the copy
+    rm(string(thetaPath, "Original.zts"))
+    # Replace the original PRZM5.inp file to avoid confusion
     cp(string(thetaPath, "PreTHETA.txt"), string(thetaPath, "PRZM5.inp"), force=true)
+    rm(string(thetaPath, "PreTHETA.txt"))
 end
 
 # This writes a new VVWMTransfer file by copying lines from the old one and inserting those that have changed
@@ -1438,12 +1445,16 @@ function vfsMain(usInp::userInputs)
     # All of the rest of the input and output file names can be generated programmatically
     inOutNames = writeFileNames(usInp)
 
+    # If there's not a path to the precent moisture condition .zts file (theta), make one
+    if usInp.thetaPath == ""
+        writePRZMTheta(usInp.workingPath, usInp.exePath)
+    end
+
     # Check if the expected files exist for an elegant exit with no dangling files
     if length(checkFilesExist(inOutNames, usInp)) > 0
         error(string("Unable to find: ", checkFilesExist(inOutNames, usInp)))
         # return
     end
-
     # The properties of the grass never change, but its existence is used for program control
     writeGrass(inOutNames.igrOutName)
 
