@@ -7,9 +7,7 @@ include("./VFSUtils.jl")
 stripWidthInM = [1.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
-# NOTE: If an .SCN file using the filename specified in the PWC run is located in workingPath, it will supersede any in the folder specified by scenarioPath
-workingPath = "Z:\\SharedwithVM\\VFS Automatic Theta\\" # must end in a double back-slash or slash
-# Name of the .SWI or .PWC file
+# Name of the .PWC file
 pwcName = "Generic Pesticide"
 
 # *******************************************************************************************************************************************************************
@@ -57,6 +55,8 @@ slopesInPercent = [-9999]
 #***********************************************************************************************************************************************************************
 # A check for a 'fresh' vvwmTransfer file - if it exists, capture the scenario name to use as a unique name for the working files
 # Unique names allow multiple, consecutive simulations in the same folder
+oldTXT = ""
+newTXT = ""
 if !isfile(string(workingPath, "vvwmTransfer.txt"))
     #scenarioName = readlines(string(workingPath, "vvwmTransfer.txt"))[29]
     error("VFSPipe has already been run on these PWC results. Please re-run PWC and try again.")
@@ -76,9 +76,12 @@ for width in stripWidthInM
         usInp = userInputs(stripWidthInM=width, workingPath=workingPath, pwcName=pwcName, useHPF=useHPF, stormLengthInHours=stormLengthInHours, exePath=exePath, thetaPath=thetaPath, pesticideEquation=pesticideEquation, Ksat=Ksat, shapeFlag=shapeFlag, slope=slope, isFirstRun=firstRun, isLastRun=lastrun, remobilizationFlag=remobilizationFlag)#, scenarioName = scenarioName, scenarioPath = scenarioPath)
 
         #This runs VFSMOD for all runoff events, rewrites the zts file and returns the string to run VVWM
-        newVVWM, oldTXT, newTXT = vfsMain(usInp)
+        newVVWM, oTXT, nTXT = vfsMain(usInp)
         run(newVVWM)
 
+        # multiple assignments don't seem to work with global variables, so we do it locally, then globally
+        global oldTXT = oTXT
+        global newTXT = nTXT
         global firstRun = false
     end
 end
@@ -88,8 +91,9 @@ end
 ##projectName = "VFSM" #Six characters only ### Currently not used
 ##twoCharacterCode = "OD" ### Currently not used
 
-# Plots do not work within the loop structure
-# noVFS = getVVWMText(columnNames(),oldTXT)
-# yesVFS = getVVWMText(columnNames(),newTXT)
-# plot(noVFS.Run, [noVFS.Peak,yesVFS.Peak], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Peak Without VFS" "Peak With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
-# plot!(noVFS.Run, [noVFS.OneYear,yesVFS.OneYear], title = string("Efficacy of ", width, "m VFS for EEC Reduction"), label = ["Yearly Without VFS" "Yearly With VFS"], linecolor = ["Dark Orange" "Light Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
+# This will only work on the last run, but was requested by users
+# This is obviously going to be improved upon, adding the ability to 'browse' between results
+ noVFS = getVVWMText(columnNames(),oldTXT)
+ yesVFS = getVVWMText(columnNames(),newTXT)
+ plot(noVFS.Run, [noVFS.Peak,yesVFS.Peak], title = string("Efficacy of ", stripWidthInM[end], "m VFS for EEC Reduction"), label = ["Peak Without VFS" "Peak With VFS"], linecolor = ["Brown" "Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
+ plot!(noVFS.Run, [noVFS.OneYear,yesVFS.OneYear], title = string("Efficacy of ", stripWidthInM[end], "m VFS for EEC Reduction"), label = ["Yearly Without VFS" "Yearly With VFS"], linecolor = ["Dark Orange" "Light Green"],lw = 2, xlabel = "Simulation Year", ylabel = "PPB")
