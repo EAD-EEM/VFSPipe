@@ -7,14 +7,15 @@ include("./VFSUtils.jl")
 stripWidthInM = [1.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
-workingPath = "Z:\\SharedwithVM\\VFS\\Project\\"
+workingPath = "Z:\\SharedWithVM-2\\VFS\\VFSPipe Development\\US from Scratch\\"
+
 # Name of the .PWC file
-pwcName = "Generic Pesticide"
+pwcName = "GP-CACotton"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
 # Executables folder must contain PRZM5.exe, vfsm.exe and vvwm.exe
-exePath = "Z:\\SharedwithVM\\VFS\\executables\\PWC2VFSMOD45\\" # must end in a double back-slash or slash
+exePath = "Z:\\SharedWithVM-2\\VFS\\executables\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the water content of the VFS soil, is found.
 # If blank (just "") a new .zts with the appropriate θ data will be created
@@ -35,7 +36,7 @@ remobilizationFlag = 1 # Recommended choice is 1 - only the part of the dissolve
 # Ksat - Any positive value in m/s
 # Set to any value -9999 or less to use the lookup table method (based on soil texture pulled from the PWC scenario)
 # Set to any 0 > value > -9999 to use the Wösten et al., 1999 formula (based on soil texture, bulk density, and organic matter from PWC scenario, and specific to topsoils)
-Ksat = -9999 #in m/s - RECOMMENDED CHOICE IS -9999
+Ksat = -4999 #in m/s - RECOMMENDED CHOICE IS -9999
 
 # The dimensions of the VFS are calculated from its width (which VFSMOD calls its length) and the area of the pond into which it flows
 # The default is a square field based on the field area with a rectangular VFS on one edge
