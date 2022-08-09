@@ -541,97 +541,6 @@ function writeRunoff(RUNF0, scen::scenarioParameters, filter::filterParameters, 
     close(iro)
 end
 
-# this populates the scenarioParameters struct from the information in the PWC .SCN File
-# It causes more problems than it's worth another version reads from the .SWI or .PWC directly
-function readScenarioParameters(scnFileName, usInp::userInputs)
-    scn = open(scnFileName, "r")
-    #Throw away the first three lines
-    for i in 1:6
-        readline(scn)
-    end
-    fieldArea = 10.0
-    fldArea = readline(scn) #7
-    if fldArea != ""
-        fieldArea = parse(Float64, fldArea) / constants().mSqInAHa
-    end
-    pondArea = 10000.0
-    pndArea = readline(scn) #8
-    if pndArea != ""
-        pondArea = parse(Float64, pndArea)
-    end
-    for i in 9:13
-        readline(scn)
-    end
-    benthicPorosity = readfirst(scn) # 14
-    ρBenthicBulk = readfirst(scn) # 15
-    for i in 16:48
-        readline(scn)
-    end
-    slope = readfirst(scn) / constants().cent #49 - must be fractional, not percent
-    slpPrct::Float64 = usInp.slope
-    if slpPrct >= 0 # The user has specified a slope (in percent) to override the scenario
-        slope = slpPrct / constants().cent # Must be a fraction, not a percent
-    end
-    hydraulicLength = readfirst(scn) #50 in m
-    for i in 51:52
-        readline(scn)
-    end
-    ρ = readfirst(scn) #53 in g per cm^3 (or tonnes per m^3)
-    fieldCapacity = readfirst(scn) #54
-    wiltingPoint = readfirst(scn) #55
-    ocPercent = readfirst(scn) #56
-    readline(scn) #57
-    sandPercent = readfirst(scn) #58
-    clayPercent = readfirst(scn) #59
-    close(scn)
-    POR = 1 - (ρ / constants().ρQuartz)
-    siltPercent = (100 - sum([sandPercent, clayPercent]))
-    texture = getSoilClass(sandPercent, siltPercent, clayPercent)
-    #This derivation probably highlights a logical flaw in determining the bulk density of sediments
-    #In PWC scenario development rather than providing a better value for sediment bulk density
-    #It shall be left here but not used in the writing of the sediment input file for now
-    ρSedimentParticle = (ρBenthicBulk - benthicPorosity * constants().ρWater) / (1 - benthicPorosity)
-
-    #Alternate methods to determine Ksat (a.k.a VKS)
-    topsoil = 1 #This is a qualitative binary in the equation - set here to 1 so that all VFS soils are topsoils when using Wösten
-    VKS::Float64 = usInp.Ksat
-    if VKS < -9998.999 #it's not an integer, so just being cautious
-        VKS = texture[1]
-    elseif -9999 < VKS < 0.0 # use the empirical equation from Wösten et al., 1999 (Geoderma 90 1999 169–185)
-        silt = (100 - sum([sandPercent, clayPercent]))
-        om = ocPercent * 1.724 # Empirical adjustment from organic carbon percent to organic matter percent
-        Wösten = exp(7.755
-                     + 0.0352 * silt
-                     + 0.93 * topsoil
-                     -
-                     0.967 * ρ^2
-                     -
-                     0.000484 * clayPercent^2
-                     -
-                     0.000322 * silt^2
-                     +
-                     0.001 / silt
-                     -
-                     0.0748 / om
-                     -
-                     0.643 * log(silt)
-                     -
-                     0.01398 * ρ * clayPercent
-                     -
-                     0.1673 * ρ * om
-                     +
-                     0.02986 * topsoil * clayPercent
-                     -
-                     0.03305 * topsoil * silt)
-        VKS = Wösten / constants().cmInAMeter / constants().hoursInADay / constants().secondsInAnHour
-    else
-        #Do Nothing: keep the user's input Ksat
-    end
-    
-    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope, SILT_FRAC=siltPercent / 100)
-
-    return scenStruct
-end
 # this populates the scenarioParameters struct from the information in the .SWI or .PWC file
 function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
     swi = open(fns.swiFileName, "r")
@@ -687,7 +596,12 @@ function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
         #thisLine = readline(swi)
         slope, hydraulicLength = split(readline(swi), ",")[2:3]
         slope = parse(Float64, slope)
-        hydraulicLength = parse(Float64, hydraulicLength)
+        if hydraulicLength == ""
+            hydraulicLength = 356.8 #If the hydraulic length is blank, assume it's the EPA Pond
+        else
+            hydraulicLength = parse(Float64, hydraulicLength) #If it's filled in, it's a custom water body
+        end
+
         while pwcLine != "*** Horizon Info *******"
             pwcLine = readline(swi)
         end
@@ -721,6 +635,7 @@ function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
 
     #Alternate methods to determine Ksat (a.k.a VKS)
     topsoil = 1 #This is a qualitative binary in the equation - set here to 1 so that all VFS soils are topsoils when using Wösten
+    SAV = texture[2]
     VKS::Float64 = usInp.Ksat
     if VKS < -9998.999 #it's not an integer, so just being cautious
         VKS = texture[1]
@@ -751,15 +666,18 @@ function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
                      -
                      0.03305 * topsoil * silt)
         VKS = Wösten / constants().cmInAMeter / constants().hoursInADay / constants().secondsInAnHour
+        if SAV == 0.0 # It's actually silt, but a value of zero gives an error in VFSMOD
+            SAV = 3.16E-01 # So substitute the value for clay
+        end
     else
         #Do Nothing: keep the user's input Ksat
     end
 
     if VKS < 1E-20
-        error("The sautrated hydraulic conductivity is zero. There will be no infiltration in the VFS. Check that the PWC scenario includes sand and clay percents.")
+        error("The saturated hydraulic conductivity is zero. There will be no infiltration in the VFS. Check that the PWC scenario includes sand and clay percents.")
     end
 
-    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=texture[2], DP=texture[3], θSoil=POR, SOA=slope)
+    scenStruct = scenarioParameters(fieldAreaInHa=fieldArea, pondAreaInM2=pondArea, hydraulicLengthInM=hydraulicLength, OCP=ocPercent, CCP=clayPercent, FC=fieldCapacity, COARSE=sandPercent / constants().cent, POR=POR, VKS=VKS, SAV=SAV, DP=texture[3], θSoil=POR, SOA=slope)
 
     return scenStruct
 end
