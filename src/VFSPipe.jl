@@ -7,6 +7,7 @@ include("./VFSUtils.jl")
 stripWidthInM = [1.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
+workingPath = "Z:\\SharedwithVM\\VFS\\Project\\"
 # Name of the .PWC file
 pwcName = "Generic Pesticide"
 
