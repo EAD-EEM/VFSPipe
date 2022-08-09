@@ -8,6 +8,7 @@ stripWidthInM = [1.5]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
 workingPath = "Z:\\SharedWithVM-2\\VFS\\VFSPipe Development\\US from Scratch\\"
+
 # Name of the .PWC file
 pwcName = "GP-CACotton"
 
