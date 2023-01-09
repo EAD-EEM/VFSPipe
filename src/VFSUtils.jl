@@ -794,7 +794,7 @@ function writeFilterStrip(width::Float64, scen::scenarioParameters, shapeFlag::I
         length = sqrt(scen.pondAreaInM2)
     end
 
-    filter = filterParameters(VL=width, FWIDTH=length, N=nodes, areaInMSq=width * length, areaInHa=width * length / constants().mSqInAHa, SX=width)
+    filter = filterParameters(VL=width, FWIDTH=length, N=nodes, areaInMSq=width * length, areaInHa=width * length / constants().mSqInAHa, SX=width, SOA=scen.SOA)
     ikw = open(fn, "w")
     write(ikw, string(prj, " - ", trunc(Int64, filter.VL), " m filter strip"), "\n") #, @sprintf("%.4f",scen.COARSE), "  ", @sprintf("%.10f",sediment.CI),"  ", @sprintf("%.4f",scen.POR)),"\n")
     write(ikw, string(@sprintf("%.3f", filter.FWIDTH)), "\n")
