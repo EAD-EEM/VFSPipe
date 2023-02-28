@@ -312,28 +312,9 @@ function writeFileNames(ui::userInputs)
     resultsOutName = string(ui.workingPath, ui.stripWidthInM, "m_", projectName, "Results.txt")
     #For now, since we don't really need an HPF - could create from dvf or met right here
     #In future, should explore real hourly with the 'new' met data
-    hpfInName = string(ui.workingPath, projectName, ".HPF")
+    
     prjInName = string(ui.workingPath, projectName, ".prj")
     prjOutName = string(ui.workingPath, projectName, runNumber, ".prj")
-
-    #scnFileName = string(ui.workingPath, readlines(swiFileName)[49], ".SCN")
-    # No longer need anything from the .SCN or .SCN2 file
-    #scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN") #Use the scenario file name from the VVWMTransfer file.
-    #if isfile(scnFileName)
-    #    # Do nothing
-    #else
-    #    scnFileName = string(ui.workingPath, ui.scenarioName, ".SCN2")
-    #    if isfile(scnFileName)
-    #        # Do nothing
-    #    else        
-    #        scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN")
-    #        if isfile(scnFileName)
-    #            #Do nothing
-    #        else
-    #            scnFileName = string(ui.scenarioPath, readlines(swiFileName)[49], ".SCN2")
-    #        end
-    #    end
-    #end
 
     dailyWeatherFileName = readlines(swiFileName)[50]
     if isfile(dailyWeatherFileName)
@@ -341,6 +322,8 @@ function writeFileNames(ui::userInputs)
     else
         dailyWeatherFileName = string(ui.workingPath, split(readlines(scnFileName)[2], "\\")[end])
     end
+    
+    hpfInName = string(split(dailyWeatherFileName, ".")[1], ".hpf")
     thetaInName = string(ui.thetaPath, split(readlines(swiFileName)[50], "\\")[end][1:(end-4)], "Theta.zts")
 
     #Create a project file for VFSMOD to read the file names too
@@ -391,29 +374,21 @@ end
 # There are two versions: one which interprets daily precipitation files (for all Canadian scenarios) and one which interprets hourly precipitation files
 #This takes a vector of HOURLY rain intensities and writes out an irn file of durations and intensities
 #This version trims zeroes off both ends to reduce run time of VFSMOD
-function writePrecipitation(row::DataFrame, fns::inOutFileNames)
+function writePrecipitation(row::DataFrameRow, fns::inOutFileNames)
     #Containers
     times = Vector{Int16}()
     rates = Vector{Float32}()
     #Convert this row from a DataFrame into a vector for easy manipulation
     row = vec(permutedims(Vector(row)))
-    #Remove any zeroes from the beginning
-    while row[1] == 0
-        deleteat!(row, 1)
-    end
-    #Remove any zeroes from the end
-    while row[end] == 0
-        deleteat!(row, length(row))
-    end
 
-    #Do not want reduduncancy, but easier to write them all and remove than to control what to write
-    for i in 1:length(row)
+    #Do not want redundancy, but easier to write them all and remove than to control what to write
+    for i in 1:row[1]
         t = (i - 1) * constants().secondsInAnHour # We want the hour, not the index
         times = [times; t]
-        r = row[i] / constants().cmInAMeter / constants().secondsInAnHour #HPF is in cm/h, irn is in m/s
+        r = row[2] / constants().cmInAMeter / constants().secondsInAnHour / row[1] #HPF is in cm/h, irn is in m/s
         rates = [rates; r]
     end
-    i = 1 #length(times)
+#=     i = 1 #length(times)
     while length(times[i:end]) > 2
         if rates[i] == rates[i+1] #&& rates[i] == rates[i+2]
             deleteat!(times, i + 1)
@@ -421,7 +396,7 @@ function writePrecipitation(row::DataFrame, fns::inOutFileNames)
         else
             i += 1
         end
-    end
+    end =#
 
     #The runoff calculation needs the precipitation time
     #Need to record it before adding on the zeroes
@@ -438,8 +413,8 @@ function writePrecipitation(row::DataFrame, fns::inOutFileNames)
 
     # create the struct before altering the vectors for text output
     rain = zeros(Float64, 200, 2)
-    rain[1:length(times), 1:2] = hcat([times], [rates])
-    storm = rainInput(nrain=numberOfDataInAFakeStorm, rpeak=secondlyRate, rain=rain)
+    rain[1:length(times), 1:2] = hcat(times, rates)
+    storm = rainInput(nrain=length(times), rpeak=maximum(rates), rain=rain)
 
     #VFSMOD expects a description of the data at the top of the data
     pushfirst!(times, length(times))
@@ -628,8 +603,8 @@ function readScenarioParameters(fns::inOutFileNames, usInp::userInputs)
     POR = 1 - (ρ / constants().ρQuartz)
     texture = getSoilClass(sandPercent, (100 - sum([sandPercent, clayPercent])), clayPercent)
 
-    #This derivation probably highlights a logical flaw in determining the bulk density of sediments
-    #In PWC scenario development rather than providing a better value for sediment bulk density
+    #This derivation simply reflects how the bulk density of sediments is determined
+    #in PWC scenario development rather than providing a better value for sediment bulk density
     #It shall be left here but not used in the writing of the sediment input file for now
     ρSedimentParticle = (ρBenthicBulk - benthicPorosity * constants().ρWater) / (1 - benthicPorosity)
 
@@ -873,7 +848,12 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
                 end
             end
             # For model version 4.5, using dgMRES, not adding in the mass
-            dgMRES0 = parse(Float64, split(owqLine, " ", keepempty=false)[1]) # in mg/m2
+            dgMRES0 = nothing
+            try #when the numbers get very small, VFSMOD doesn't record them properly
+                dgMRES0 = parse(Float64, split(owqLine, " ", keepempty=false)[1]) # in mg/m2
+            catch
+                dgMRES0 = 0.0
+            end
             mobilizableResidueInMg = 0.0
         else
             while owqWord != "remobilization" # scoot to right section
@@ -889,7 +869,12 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
             owqLine = readline(owq)
         end
         # VFSMOD version 4.4.3, so add the mass in the filter to the incoming
-        mobilizableResidueInMg = parse(Float64, split(owqLine, " ", keepempty=false)[1]) # in mg
+        mobilizableResidueInMg = nothing
+        try
+            mobilizableResidueInMg = parse(Float64, split(owqLine, " ", keepempty=false)[1]) # in mg
+        catch
+            mobilizableResidueInMg = 0.0
+        end
         dgMRES0 = 0.0
     else
         # VFSMOD hasn't been run yet, so can't tell which version, and there's no residue
@@ -968,12 +953,22 @@ function readWaterQuality(scen::scenarioParameters, filter::filterParameters, fn
         readline(osm) #throw away 5 lines
     end
 
-    runoffOutM3 = parse(Float64, split(readline(osm))[5])
+    runoffOutM3 = nothing
+    try
+        runoffOutM3 = parse(Float64, split(readline(osm))[5])
+    catch
+        runoffOutM3 = 0.0
+    end
     for i in 1:11
         readline(osm) #throw away 11 lines
     end
 
-    sedimentOutG = parse(Float64, split(readline(osm))[6])
+    sedimentOutG = nothing
+    try
+        sedimentOutG = parse(Float64, split(readline(osm))[6])
+    catch
+        sedimentOutG = 0.0
+    end
     owqLine = ""
     owqWord = ""
 
@@ -992,29 +987,72 @@ function readWaterQuality(scen::scenarioParameters, filter::filterParameters, fn
     end
 
     readline(owq) # Throw away a blank line
-    runoffInM3 = parse(Float64, split(readline(owq))[1])
-    sedimentInG = parse(Float64, split(readline(owq))[1]) * constants().gInAKg
+    runoffInM3 = nothing
+    try
+        runoffInM3 = parse(Float64, split(readline(owq))[1])
+    catch
+        runoffInM3 = 0.0
+    end
+    sedimentInG = nothing
+    try
+        sedimentInG = parse(Float64, split(readline(owq))[1]) * constants().gInAKg
+    catch
+        sedimentInG = 0.0
+    end
 
     for i in 1:2
         readline(owq) #throw away 2 lines
     end
 
-    sedimentReductionPercent = parse(Float64, split(readline(owq))[1])
-    runoffReductionPercent = parse(Float64, split(readline(owq))[1])
+    sedimentReductionPercent = nothing
+    try
+        sedimentReductionPercent = parse(Float64, split(readline(owq))[1])
+    catch
+        sedimentReductionPercent = 0.0
+    end
+    runoffReductionPercent = nothing
+    try
+        runoffReductionPercent = parse(Float64, split(readline(owq))[1])
+    catch
+        runoffReductionPercent = 0.0
+    end
     readline(owq) # Throw away a blank line
-    pesticideReductionPercent = parse(Float64, split(readline(owq))[1])
-
+    pesticideReductionPercent = nothing
+    try
+        pesticideReductionPercent = parse(Float64, split(readline(owq))[1])
+    catch
+        pesticideReductionPercent = 0.0
+    end
     for i in 1:3
         readline(owq) #throw away 3 lines
     end
 
-    pesticideIn = parse(Float64, split(readline(owq))[1])
-    pesticideOut = parse(Float64, split(readline(owq))[1])
-
+    pesticideIn = nothing
+    try
+        pesticideIn = parse(Float64, split(readline(owq))[1])
+    catch
+        pesticideIn = 0.0
+    end
+    pesticideOut = nothing
+    try
+        pesticideOut = parse(Float64, split(readline(owq))[1])
+    catch
+        pesticideOut = 0.0
+    end
     # The next line has the pesticide mass on the solids leaving the strip
-    pesticideSolidOutmg = parse(Float64, split(readline(owq))[1])
+    pesticideSolidOutmg = nothing
+    try
+        pesticideSolidOutmg = parse(Float64, split(readline(owq))[1])
+    catch
+        pesticideSolidOutmg = 0.0
+    end
     # The next line has the pesticide mass in the dissolved phase leaving the strip
-    pesticideWaterOutmg = parse(Float64, split(readline(owq))[1])
+    pesticideWaterOutmg = nothing
+    try
+        pesticideWaterOutmg = parse(Float64, split(readline(owq))[1])
+    catch
+        pesticideWaterOutmg = 0.0
+    end
 
     water = runoffOutM3 * constants().cmInAMeter / filter.areaInMSq # now in cm/day
     solids = sedimentOutG / constants().gInATonne # now in tonnes/day
@@ -1420,25 +1458,26 @@ function vfsMain(usInp::userInputs)
 
     thetaIn = DataFrame(load(File{format"CSV"}(inOutNames.thetaInName), spacedelim=true, skiplines_begin=3, header_exists=false))[!, thetaPosition]
 
+    # The formats of the meteorological files are different
+    if inOutNames.dailyWeatherFileName[end-2:end] == "wea"
+        weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=false, header_exists=false, colnames=cn.weaColumns))
+    else
+        # Need to know how many columns the dvf file has, since it's not the same between PMRA and EPA
+        dvfile = open(inOutNames.dailyWeatherFileName)
+        dvfColumnCount = length(split(readline(dvfile), " ", keepempty=false))
+        close(dvfile)
+        if dvfColumnCount < 10
+            weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=true, header_exists=false, colnames=cn.dvfColumns))
+        else
+            weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=true, header_exists=false, colnames=cn.dvf14Columns))
+        end
+    end
+
     #The Hourly Precipitation File (HPF), if being used
     if usInp.useHPF
         precipIn = DataFrame(load(File{format"CSV"}(inOutNames.hpfInName), spacedelim=true, header_exists=false, colnames=cn.hpfColumns))
     else
         # Only need the daily precipitation, but want it in a dataframe with a header
-        # leading to this slightly awkward work-around
-        if inOutNames.dailyWeatherFileName[end-2:end] == "wea"
-            weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=false, header_exists=false, colnames=cn.weaColumns))
-        else
-            # Need to know how many columns the dvf file has, since it's not the same between PMRA and EPA
-            dvfile = open(inOutNames.dailyWeatherFileName)
-            dvfColumnCount = length(split(readline(dvfile), " ", keepempty=false))
-            close(dvfile)
-            if dvfColumnCount < 10
-                weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=true, header_exists=false, colnames=cn.dvfColumns))
-            else
-                weatherIn = DataFrame(load(File{format"CSV"}(inOutNames.dailyWeatherFileName), spacedelim=true, header_exists=false, colnames=cn.dvf14Columns))
-            end
-        end
         precipIn = weatherIn[!, [:Total]]
         stormLength = usInp.stormLengthInHours * constants().secondsInAnHour
     end
@@ -1502,7 +1541,17 @@ function vfsMain(usInp::userInputs)
             #The runoff calculation needs the total event time, either returned from the rain function, if using hourly weather,
             #Or set by the user if using daily weather information
             if usInp.useHPF
-                eventTime, irn = writePrecipitation(precipIn[day, :][5:end], inOutNames)
+                # if there's rain, write the rain file
+                if precipIn[day, 2] > 0
+                    eventTime, irn = writePrecipitation(precipIn[day, :][2:3], inOutNames)
+                # no rain, so write a dummy file with default storm length of 8 hours
+                else
+                    eventTime = 8
+                    irn = writePrecipitation(0.0,8,inOutNames)
+                end
+                
+                stormLength = eventTime
+
             else
                 eventTime = stormLength
                 irn = writePrecipitation(precipIn.Total[day], stormLength, inOutNames)

@@ -4,18 +4,19 @@
 include("./VFSUtils.jl")
 
 #User choice - an array of widths in meters
-stripWidthInM = [1.5]
+stripWidthInM = [10]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
-workingPath = "Z:\\SharedWithVM-2\\VFS\\VFSPipe Development\\US from Scratch\\"
+
+workingPath = "C:\\Users\\hcuser\\Documents\\Local VFS\\HPF\\"
 
 # Name of the .PWC file
-pwcName = "GP-CACotton"
+pwcName = "GP-GAOnion"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
 # Executables folder must contain PRZM5.exe, vfsm.exe and vvwm.exe
-exePath = "Z:\\SharedWithVM-2\\VFS\\executables\\" # must end in a double back-slash or slash
+exePath = "C:\\Users\\hcuser\\Documents\\Local VFS\\executables\\" # must end in a double back-slash or slash
 
 # The location of the pre-run .zts files where θ, the water content of the VFS soil, is found.
 # If blank (just "") a new .zts with the appropriate θ data will be created
@@ -26,9 +27,9 @@ thetaPath = ""
 
 # *******************************************************************************************************************************************************************
 # The following all have defaults, but are of interest for the model's sensitivity to them
-# If there's a proper hourly precipitation file (HPF), use that, otherwise generate the precipitation event programmatically from the daily value
-useHPF = false
-stormLengthInHours = 8 #only read when useHPF is false - RECOMMENDED CHOICE IS 8
+# If true, VFSPipe will look in the weather directory for a .hpf file with the same name as the .dvf or .wea file used to run PWC
+useHPF = true
+stormLengthInHours = 8 # RECOMMENDED CHOICE IS 8
 
 pesticideEquation = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen - RECOMMENDED CHOICE IS 3
 remobilizationFlag = 1 # Recommended choice is 1 - only the part of the dissolved pesticide in mixing layer in equilibrium with moisture content is remobilized at the start of the next event
@@ -36,7 +37,7 @@ remobilizationFlag = 1 # Recommended choice is 1 - only the part of the dissolve
 # Ksat - Any positive value in m/s
 # Set to any value -9999 or less to use the lookup table method (based on soil texture pulled from the PWC scenario)
 # Set to any 0 > value > -9999 to use the Wösten et al., 1999 formula (based on soil texture, bulk density, and organic matter from PWC scenario, and specific to topsoils)
-Ksat = -4999 #in m/s - RECOMMENDED CHOICE IS -9999
+Ksat = -9999 #in m/s - RECOMMENDED CHOICE IS -9999
 
 # The dimensions of the VFS are calculated from its width (which VFSMOD calls its length) and the area of the pond into which it flows
 # The default is a square field based on the field area with a rectangular VFS on one edge
