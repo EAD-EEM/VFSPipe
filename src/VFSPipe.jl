@@ -7,7 +7,9 @@ include("./VFSUtils.jl")
 stripWidthInM = [10]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
+
 workingPath = "C:\\Users\\hcuser\\Documents\\Local VFS\\HPF\\"
+
 # Name of the .PWC file
 pwcName = "GP-GAOnion"
 
