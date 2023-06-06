@@ -1,0 +1,80 @@
+DRAFT Instructions for getting started with VFSPipe
+
+NOTE: there is a .rtf version of these instructions with pictures and formatting within GettingStarted.zip
+
+Getting julia ready
+Download and install julia. Available from: https://julialang.org/downloads/
+On windows, you should be able to run julia from your start menu (by typing “julia.exe” and pressing enter), and it should open a shell:
+ 
+You’ll need to install all of the packages required by VFSPipe. Type a right bracket, i.e. “]”, to enter the package manager, and the prompt should change:
+ 
+Then type: “add CSVFiles DataFrames PrettyTables Printf CSV Parameters Plots StaticArrays” (without the quotation marks) and push enter. You can copy-paste, but ctrl-v won’t work – right-clicking should paste in the shell window.
+ 
+Now push backspace to exit the package manager and return to the julia prompt.
+Required Files for VFSPipe
+VFSPipe is just a bit of code that runs other models. It comes in two pieces, VFSPipe.jl and VFSUtils.jl. available from the git repository. VFSPipe.jl is the equivalent of a user interface, and VFSUtils.jl holds all of the code. Put them wherever you like, but it is easiest to put them in the same folder. You will also require the executables for PWC, VFSMOD, PRZM, and VVWM. That is, copies of PRZM.exe and VVWM.exe (from PWC) should be placed into a folder together with VFSM.exe.
+NOTE: VFSPipe is now compatible only with PWC 2.0
+There is also an ExampleCase folder to get you started with a test run.
+In order to control VFSPipe, you’ll need to edit VFSPipe.jl. You can edit it with your favourite text editor, if you have one, or Notepad if you don’t.
+For your test run, you should only need to update the paths to match the locations on your machine where you placed the files. These will be workingPath – the location of the .PWC file, and exePath – the location of PRZM, VVWM, and VFSMOD. For future runs, you will have to change pwcName too. Save and close.
+NOTE: julia requires paths to have double back-slashes between directories, and for the paths to be enclosed in quotation marks for example, setting the exePath on my machine looks like:
+	exePath = "C:\\Users\\SharedWithVM\\VFS\\executables\\"
+Alternately, you can use all single forward slashes, as in:
+	exePath = "C:/Users/SharedWithVM/VFS/executables/"
+Either will work. What will NOT work is copy-and-pasting the path from a Windows File Explorer window.
+NOTE: the current version no longer requires that a precedent moisture condition (theta) file be generated – if thetaPath is left as “” the program will generate one. You can still specify a directory if you have specific theta values you wish to use.
+Running
+You need to start by performing a normal PWC run to get the ‘before’ EECs. There is an example case that is (mostly) ready to go. Download GenericPesticide.PWC, and Charlottetown.dvf from the ExampleCase folder on github into the same folder.  Start PWC, choose File>Retrieve All, navigate to the folder and choose the PWC file. Click on the Weather File button on the Land tab to update the path to the .dvf file. Then save the PWC file (i.e., File>Save All Inputs). Then Click Run.
+Then, to start VFSPipe, go back to your julia shell and ‘include’ VFSPipe.jl. You can navigate to the directory or include the entire path. For example, on my machine:
+include("C:\\Users\\jwestgat\\SharedWithVM\\VFS\\Pipe\\VFSPipe.jl")
+ 
+NOTE: it is suggested to use complete paths, because VFSPipe will change your julia working directory. It will change it back when it completes successfully, but if it is interrupted, you will have to navigate back to the location of your .jl file to restart.
+The first time you do this it may take a LONG time, because julia will ‘precompile’ all of those packages you just installed. It only has to do this the first time (or after any package updates). If there aren’t any problems, VFSPipe should call VFSMOD for every runoff event for the 50 years of run. Then it will call VVWM again. If you are running in a REPL, it ought to output a reassuring chart of the results (the results will still be in memory in julia, so if you copy and paste either of the last two lines of VFSPipe.jl into the julia REPL, you can look at the other time scales). 
+Notes on File Locations
+VFSPipe gets many of its input data from the PWC and PRZM files. It is a rough tool and it makes some assumptions about the locations and content of those files. It is very important that the user save any changes to the PWC files before running VFSPipe.
+VFSPipe currently requires the following to reside in the working directory, specified in the workingPath variable in VFSPipe.jl:
+•	.PWC file
+•	.zts file
+•	vvwmTransfer.txt file
+It will look for the weather file in whatever location PWC used. The scenario (.SCN or .SCN2) file is not required by the current version.
+VFSPipe requires a ‘fresh’ PWC run. The current version checks for a vvwmTransfer.txt file, output by PWC, and immediately changes its name by prepending the pwcName and scenario to it. This prevents accidentally running the output back through VFSMOD. It also allows multiple instances of VFSPipe to run simultaneously using the same working directory, provided at least one of the pwcName or the scenario used are different.
+Notes on running multiple instances
+•	Re-running PWC will overwrite the vvwmTranfer.txt file from the most recent PWC run, so you must start VFSPipe on the first run before running PWC on the second run in the same folder.
+•	If you only change scenarios and keep the same .PWC filename in the same folder, you do not need to edit VFSPipe.jl. Just open a new julia window and ‘include’ VFSPipe.jl again. However, if you change chemical or application information and save to the same PWC file partway through a run with multiple filter strip widths, you may generate incorrect results.
+•	VFSPipe will increment a number in the VFSMOD filenames to prevent conflicts while running parallel simulations in the same working folder, but will overwrite the lowest number not being used. For example, if five simulations are run at the same time in the same folder, VFSPipe will create five sets of VFSMOD files, with the filenames VFSM0 through VFSM4. If another simulation is run after VFSM0 is finished, it will overwrite VFSM0.
+o	The ‘counter’ will not reset if execution of VFSPipe is halted or exits on error, so these can pile up in your working folder. Simply delete them.
+Further Runs
+All of the guts of the VFSPipe are in VFSUtils.jl.  VFSPipe.jl is intended to simplify the use of the tool by only requiring those inputs that may change regularly (and is the first step in eventually adding a user interface). For many uses, the user input changes might only be the pwcName field and the width of the strip (by which I mean the distance between the field and the water, which VFSMOD calls the length). The current version will accept a list of strip widths (enclosed in brackets, separated by commas, e.g. “stripWidthInM = [1.0, 2.0, 5.0, 10.0]”) and run them all, prepending the vvwm output filenames with the widths.
+The flip-side is that some customization is required to explore other inputs. The version I’ve shared allows one to specify a saturated hydraulic conductivity rather than allow VFSPipe to look it up based on soil texture. The user can also specify which pesticide efficiency equation to use by setting pesticideEquation, to change the rain event length with stormLengthInHours or, if you have the data, to use 1-hour resolution precipitation instead with useHPF. If useHPF is set to ‘true’ VFSPipe will look in the working directory for a file with the same name as the .dvf or .wea file used by PWC in the initial run, but with an .hpf file extension.
+I also added some additional ways to calculate the 2nd dimension of the strip, which I hope will make exploring the relative areas of field and strip easier.
+Set shapeFlag = 1 for a round pond surrounded by a round VFS, and shapeFlag = 2 for a square pond surrounded by a square VFS. In both of these cases, VFSPipe calculates the area of the VFS as the area of the VFS and the pond together, minus the area of the pond. It then divides that by the user-input width to get the length, and passes both to VFSMOD.
+Set shapeFlag = 3 for a rectangular pond and strip in a line. The interface edge of the field/VFS is calculated from the field area and the hydraulic length from PWC. The area of the VFS is then the product of that edge length and the strip width input by the user.
+Set shapeFlag to any other value for a rectangular VFS that is on one side of a square pond. In this case, the length of the VFS is just the square root of the area of the pond.
+Here they are conceptually. (Please pretend that the circular pond and the square ponds have the same area, and that the field is 10 times bigger than the pond).
+   
+
+The areas of both the field and the pond are taken from the PWC file. One way to explore the ratio of the areas of the field and the strip would be to change the field size in PWC.
+The saturated hydraulic conductivity can also be controlled from VFSPipe. Set Ksat = [any positive value] to use that value. Set Ksat = -9999 (or lower) to use the lookup method based only on soil textural classification (as read from the PWC input). Set 0 > Ksat > -9999 to use the formula from Wösten et al., 1999 (Geoderma 90 1999 169–185) which uses texture, bulk density, and organic matter, and has terms specific to topsoils.
+In the near future, any input to VFSMOD that does not require a separate PWC run could be added to VFSPipe.jl with the ability to run a list (feel free to request a particular variable be added). Automatically varying inputs that change the PWC run will require more development.
+Adding New Scenarios
+VFSPipe really only needs the .PWC file to work, and whatever scenario information is saved in that will be used. Here’s a fresh directory for a new run:
+ 
+I have a separate directory for all of my .dvf files and VFSPipe looks for the weather file wherever PWC did in the run. After running PWC, the other files required appear:
+ 
+After changing the path to the working directory and “including” VFSPipe.jl, it runs and the directory looks like this:
+ 
+Note that the …Theta.zts file was created automatically, since I didn’t specify a thetaPath. The concentrations in the water body can be found in the …Custom_Parent.txt files – the original is “Generic Pesticide_Potato_PEI_Custom_Parent.txt” and the results with the VFS in “1.5m_VFS_Generic Pesticide_Potato_PEI_Custom_Parent.txt” There is also “1.5m_VFSMResults.txt” that has the daily water, sediment, and pesticide masses and volumes entering and leaving the strip.
+Customizing the Precedent Moisture Condition Theta File
+VFSMOD needs to know the moisture content of the VFS at the start of the storm, and PWC is used to calculate this. It is represented by the letter theta. It actually needs only to be done once for each weather file, but since it takes only a few seconds of processing time, VFSPipe does this automatically. Should you wish to create a custom version for some reason, you can call the function in VFSUtils directly. Since the soil moisture is independent of properties of the pesticide, and by default the crop parameters will be overwritten using julia.
+First, set up a PWC run using a scenario that uses the meteorological file of interest. Save it using the format [metfilename]Theta.SWI or [metfilename]Theta.PWC. For example, “CharlottetownTheta.PWCI”. It is recommended to set this up in a separate folder. Run the PWC simulation. Your folder should now contain a PRZM5.inp file.
+In a julia shell (or REPL), include VFSUtils.jl (where all of the good bits are), by navigation to its folder, or by entering the entire path. For example, on my machine:
+ 
+This VFSUtils.jl includes a function called writePRZMTheta(). This function will work with both PWC 1.52 (and thus PRZM 5.02) and PWC 2.0x (and thus PRZM 5.08). 
+The function takes up to 4 arguments. The first is the path to the folder containing your new PRZM5.inp file. The second, optional, argument is the path to the location of PRZM5.exe. This must be the same version of PRZM as was used to generate the PRZM5.inp file. If no argument is provided it is assumed there is a copy of the correct PRZM5.exe version in the same file as the PRZM5.inp file. The third optional argument is an integer called curveNumber. If not provided, the curve number of the strip is set at 74, which matches the Turf_PA scenario, and all Canadian turf scenarios. The final, optional, argument is a Boolean, useDefaultRunoff. The default is true, and default values for USLE-C and N are used. If set to false the USLE-C values and N from your run are kept.
+Then call writePRZMTheta with the arguments separated by columns. For example:
+ 
+Since the path names are a bit long, it can be helpful to set them as variables, and then call wrtiePRZMTheta with those. On my machine:
+ 
+If changing the optional arguments, it is best to name them explicitly. For example:
+ 
+The function will write a new PRZM5.inp file and run PRZM, which will output a .zts file with the name formatted as [metfilename]Theta.zts. You may wish to tidy up the folder by deleting everything else.
