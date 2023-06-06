@@ -12,18 +12,17 @@ Executing the code runs VFSMOD for every runoff event, creates new .zts and VVWM
 The path to a folder containing the executables for PRZM, VFSMOD, and VVWM is required.
 The list of soil texture classes is no longer required as it is coded into the project.
 
-The path to a folder containing .zts files with the initial soil moisture conditions for the VFS for the scenario is still required.
+The path to a folder containing .zts files with the initial soil moisture conditions for the VFS for the scenario is no longer required.
 
 ## Theta .zts
 
-VFSMod requires the initial soil moisture of the VFS at the start of each precipitation event, as well as the moisture content to calculate degradation between precipitation events. The very clever people at Waterborne figured out that you can get PRZM to output this in the .zts file. Since it is chemical independent, PRZM only needs to be run one time for each meteorological data file, so these .zts files are stored in a separate folder. Should scenarios be added, there's a julia function to make this easier.
+VFSMod requires the initial soil moisture of the VFS at the start of each precipitation event, as well as the moisture content to calculate degradation between precipitation events. VFSPipe now automatically generates this file so it need not be created manually.
 
 ## Future Improvements
 
 Short Term
- - add checks for proper .zts file for theta (precedent moisture condition)
- - add output files comparing vvwm concentrations before and after VFSMOD run, both complete, and summary
- - add creation of the precedent moisture .zts into the main loop, since the PRZM run takes only a few seconds
+
+ - 
 
 Long Term
  - add ability to loop through scenarios, similar to a PWC scenario batch run
