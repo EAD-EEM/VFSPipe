@@ -11,7 +11,7 @@ stripWidthInM = [10]
 workingPath = "C:\\Users\\hcuser\\Documents\\Local VFS\\HPF\\"
 
 # Name of the .PWC file
-pwcName = "GP-GAOnion"
+pwcName = "Clothianidin"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
@@ -28,7 +28,7 @@ thetaPath = ""
 # *******************************************************************************************************************************************************************
 # The following all have defaults, but are of interest for the model's sensitivity to them
 # If true, VFSPipe will look in the weather directory for a .hpf file with the same name as the .dvf or .wea file used to run PWC
-useHPF = true
+useHPF = false
 stormLengthInHours = 8 # RECOMMENDED CHOICE IS 8
 
 pesticideEquation = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen - RECOMMENDED CHOICE IS 3

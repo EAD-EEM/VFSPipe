@@ -329,7 +329,7 @@ function writeFileNames(ui::userInputs)
     #Create a project file for VFSMOD to read the file names too
     fileTypes = ["ikw", "iso", "igr", "isd", "irn", "iro", "iwq", "og1", "og2", "ohy", "osm", "osp", "owq"]
     prj = open(prjOutName, "w")
-    for i in 1:length(fileTypes)
+    for i in eachindex(fileTypes)
         write(prj, string(fileTypes[i], "=", projectName, runNumber, ".", fileTypes[i]), "\n")
     end
     close(prj)
@@ -413,14 +413,14 @@ function writePrecipitation(row::DataFrameRow, fns::inOutFileNames)
 
     # create the struct before altering the vectors for text output
     rain = zeros(Float64, 200, 2)
-    rain[1:length(times), 1:2] = hcat(times, rates)
+    rain[eachindex(times), 1:2] = hcat(times, rates)
     storm = rainInput(nrain=length(times), rpeak=maximum(rates), rain=rain)
 
     #VFSMOD expects a description of the data at the top of the data
     pushfirst!(times, length(times))
     pushfirst!(rates, maximum(rates))
     irn = open(fns.irnOutName, "w")
-    for j in 1:length(times)
+    for j in eachindex(times)
         write(irn, string(@sprintf("%9s", times[j]), "  ", @sprintf("%.4E", rates[j])), "\n")
         #write(irn, string(" ", @sprintf("%08u",times[j]), "  ", @sprintf("%.4E",rates[j])), "\n")
     end
@@ -510,7 +510,7 @@ function writeRunoff(RUNF0, scen::scenarioParameters, filter::filterParameters, 
 
     iro = open(fns.iroOutName, "w")
     write(iro, string(" ", SWIDTH, " ", SLENGTH), "\n")
-    for i = 1:length(times)
+    for i = eachindex(times)
         write(iro, string(@sprintf("%9s", times[i]), " ", @sprintf("%.4E", rates[i])), "\n")
     end
     close(iro)
@@ -680,7 +680,7 @@ function getSoilClass(sand::Real, silt::Real, clay::Real, useInternal=true)
         else
             triangle = DataFrame(load(File{format"CSV"}(string(exePath, "SoilTriangle.csv"))))
         end
-        for i in 1:length(triangle.DP)
+        for i in eachindex(triangle.DP)
             if isBetween(sand, triangle.SandLow[i], triangle.SandHigh[i]) && isBetween(silt, triangle.SiltLow[i], triangle.SiltHigh[i]) && isBetween(clay, triangle.ClayLow[i], triangle.ClayHigh[i])
                 return [triangle.Ksat[i], triangle.Sav[i], triangle.DP[i]]
             end
@@ -905,11 +905,11 @@ function writeWaterQualityParameters(inBetweenDays, RFLX1, EFLX1, thetaIn, chem:
     write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML, " ", chem.dgLD, " ", dgMRES0), "\n")
     #write(iwq, string(" ", inBetweenDays, " ", chem.DGGHALF, " ", scen.FC, " ", dgPin, " ", water.dgML), "\n")
 
-    for i in 1:length(airTemps)
+    for i in eachindex(airTemps)
         write(iwq, string(" ", airTemps[i]))
     end
     write(iwq, " \n")
-    for i in 1:length(θs)
+    for i in eachindex(θs)
         write(iwq, string(" ", θs[i]))
     end
     write(iwq, " \n")
@@ -1163,7 +1163,7 @@ function writePRZMTheta(thetaPath, exePath="", curveNumber=74, useDefaultRunoff=
 
             curveNumber = string(curveNumber, ", ")
             curveNumbers = ""
-            for i in 1:length(split(readline(oldInp), ",", keepempty=false)) # This line terminates in a comma, so -1 isn't necessary
+            for i in eachindex(split(readline(oldInp), ",", keepempty=false)) # This line terminates in a comma, so -1 isn't necessary
                 curveNumbers = string(curveNumbers, curveNumber)
             end
             write(VFSPM, string(curveNumbers), "\n")
