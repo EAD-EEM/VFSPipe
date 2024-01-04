@@ -7,9 +7,9 @@ include("./VFSUtils.jl")
 stripWidthInM = [10]
 
 # The path to the working directory - should contain the .SWI or .PWC PWC file, and the output files from the original run (.zts, .inp, vvwmtransfer.txt).
-workingPath = "C:\\Users\\hcuser\\Documents\\Local VFS\\HPF\\"
+workingPath = "Z:\\OneDrive - HC-SC PHAC-ASPC\\SharedWithVM\\Soluble Pesticides and VFS\\"
 # Name of the .PWC file
-pwcName = "GP-GAOnion"
+pwcName = "Clothianidin"
 
 # *******************************************************************************************************************************************************************
 #Less often changed are the paths to unchanging files
@@ -26,7 +26,7 @@ thetaPath = ""
 # *******************************************************************************************************************************************************************
 # The following all have defaults, but are of interest for the model's sensitivity to them
 # If true, VFSPipe will look in the weather directory for a .hpf file with the same name as the .dvf or .wea file used to run PWC
-useHPF = true
+useHPF = false
 stormLengthInHours = 8 # RECOMMENDED CHOICE IS 8
 
 pesticideEquation = 3 # 1:Sabbagh;2:refitSabbagh;3:mass-bal.;4:Chen - RECOMMENDED CHOICE IS 3
